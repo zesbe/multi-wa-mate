@@ -14,7 +14,368 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      api_keys: {
+        Row: {
+          api_key: string
+          created_at: string
+          id: string
+          is_active: boolean | null
+          key_name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          api_key: string
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          key_name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          api_key?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          key_name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      broadcasts: {
+        Row: {
+          created_at: string
+          device_id: string
+          failed_count: number | null
+          id: string
+          media_url: string | null
+          message: string
+          name: string
+          scheduled_at: string | null
+          sent_count: number | null
+          status: string
+          target_contacts: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          failed_count?: number | null
+          id?: string
+          media_url?: string | null
+          message: string
+          name: string
+          scheduled_at?: string | null
+          sent_count?: number | null
+          status?: string
+          target_contacts: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          failed_count?: number | null
+          id?: string
+          media_url?: string | null
+          message?: string
+          name?: string
+          scheduled_at?: string | null
+          sent_count?: number | null
+          status?: string
+          target_contacts?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "broadcasts_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chatbot_rules: {
+        Row: {
+          created_at: string
+          device_id: string
+          id: string
+          is_active: boolean | null
+          match_type: string
+          response_text: string
+          trigger_text: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          id?: string
+          is_active?: boolean | null
+          match_type?: string
+          response_text: string
+          trigger_text: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          id?: string
+          is_active?: boolean | null
+          match_type?: string
+          response_text?: string
+          trigger_text?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chatbot_rules_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contacts: {
+        Row: {
+          created_at: string
+          device_id: string
+          group_members: Json | null
+          id: string
+          is_group: boolean | null
+          name: string | null
+          phone_number: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          group_members?: Json | null
+          id?: string
+          is_group?: boolean | null
+          name?: string | null
+          phone_number: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          group_members?: Json | null
+          id?: string
+          is_group?: boolean | null
+          name?: string | null
+          phone_number?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contacts_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      devices: {
+        Row: {
+          created_at: string
+          device_name: string
+          id: string
+          last_connected_at: string | null
+          phone_number: string | null
+          qr_code: string | null
+          session_data: Json | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_name: string
+          id?: string
+          last_connected_at?: string | null
+          phone_number?: string | null
+          qr_code?: string | null
+          session_data?: Json | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_name?: string
+          id?: string
+          last_connected_at?: string | null
+          phone_number?: string | null
+          qr_code?: string | null
+          session_data?: Json | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      message_history: {
+        Row: {
+          broadcast_id: string | null
+          contact_phone: string
+          content: string
+          created_at: string
+          device_id: string
+          id: string
+          media_url: string | null
+          message_type: string
+          user_id: string
+        }
+        Insert: {
+          broadcast_id?: string | null
+          contact_phone: string
+          content: string
+          created_at?: string
+          device_id: string
+          id?: string
+          media_url?: string | null
+          message_type: string
+          user_id: string
+        }
+        Update: {
+          broadcast_id?: string | null
+          contact_phone?: string
+          content?: string
+          created_at?: string
+          device_id?: string
+          id?: string
+          media_url?: string | null
+          message_type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_history_broadcast_id_fkey"
+            columns: ["broadcast_id"]
+            isOneToOne: false
+            referencedRelation: "broadcasts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_history_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_templates: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          media_type: string | null
+          media_url: string | null
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          media_type?: string | null
+          media_url?: string | null
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          media_type?: string | null
+          media_url?: string | null
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          full_name: string | null
+          id: string
+          phone_number: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          full_name?: string | null
+          id: string
+          phone_number?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          phone_number?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      webhooks: {
+        Row: {
+          created_at: string
+          device_id: string
+          events: Json
+          id: string
+          is_active: boolean | null
+          updated_at: string
+          url: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          events: Json
+          id?: string
+          is_active?: boolean | null
+          updated_at?: string
+          url: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          events?: Json
+          id?: string
+          is_active?: boolean | null
+          updated_at?: string
+          url?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webhooks_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
