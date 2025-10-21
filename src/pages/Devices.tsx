@@ -690,14 +690,14 @@ export const Devices = () => {
             }
           }
         }}>
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle className="text-center text-xl">
+              <DialogTitle className="text-center text-lg sm:text-xl">
                 {connectionStatus === "connected" ? "✅ Berhasil Terhubung!" : 
                  connectionStatus === "idle" ? "Pilih Metode Koneksi" :
                  selectedDevice?.connection_method === 'pairing' ? "Kode Pairing" : "Scan QR Code"}
               </DialogTitle>
-              <DialogDescription className="text-center">
+              <DialogDescription className="text-center text-sm">
                 {connectionStatus === "idle" && "Pilih cara menghubungkan WhatsApp"}
                 {connectionStatus === "connecting" && "Menghubungkan ke server..."}
                 {connectionStatus === "generating_qr" && "Membuat QR code..."}
@@ -711,37 +711,38 @@ export const Devices = () => {
               </DialogDescription>
             </DialogHeader>
             
-            <div className="flex flex-col items-center justify-center p-6 space-y-4">
+            <div className="flex flex-col items-center justify-center p-3 sm:p-6 space-y-3 sm:space-y-4">
               {connectionStatus === "idle" && (
-                <div className="space-y-4 w-full">
-                  <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-3 sm:space-y-4 w-full">
+                  <div className="grid grid-cols-2 gap-2 sm:gap-3">
                     <Button
                       variant={connectionMethod === 'qr' ? 'default' : 'outline'}
                       onClick={() => setConnectionMethod('qr')}
-                      className="h-24 flex flex-col gap-2"
+                      className="h-20 sm:h-24 flex flex-col gap-1 sm:gap-2"
                     >
-                      <QrCode className="w-8 h-8" />
-                      <span>QR Code</span>
+                      <QrCode className="w-6 h-6 sm:w-8 sm:h-8" />
+                      <span className="text-xs sm:text-sm">QR Code</span>
                     </Button>
                     <Button
                       variant={connectionMethod === 'pairing' ? 'default' : 'outline'}
                       onClick={() => setConnectionMethod('pairing')}
-                      className="h-24 flex flex-col gap-2"
+                      className="h-20 sm:h-24 flex flex-col gap-1 sm:gap-2"
                     >
-                      <Smartphone className="w-8 h-8" />
-                      <span>Kode Pairing</span>
+                      <Smartphone className="w-6 h-6 sm:w-8 sm:h-8" />
+                      <span className="text-xs sm:text-sm">Kode Pairing</span>
                     </Button>
                   </div>
 
                   {connectionMethod === 'pairing' && (
                     <div className="space-y-2">
-                      <Label htmlFor="pairingPhone">Nomor WhatsApp</Label>
+                      <Label htmlFor="pairingPhone" className="text-sm">Nomor WhatsApp</Label>
                       <Input
                         id="pairingPhone"
                         type="tel"
                         placeholder="62812345678"
                         value={pairingPhone}
                         onChange={(e) => setPairingPhone(e.target.value.replace(/\D/g, ''))}
+                        className="text-base"
                       />
                       <p className="text-xs text-muted-foreground">
                         Masukkan nomor dengan kode negara (tanpa +)
@@ -750,7 +751,7 @@ export const Devices = () => {
                   )}
 
                   <Button 
-                    className="w-full" 
+                    className="w-full text-sm sm:text-base" 
                     onClick={() => {
                       if (connectionMethod === 'pairing' && !pairingPhone) {
                         toast.error('Masukkan nomor WhatsApp');
@@ -788,48 +789,48 @@ export const Devices = () => {
               )}
               
               {(connectionStatus === "pairing_ready" || connectionStatus === "pairing_expired") && selectedDevice?.pairing_code && (
-                <div className="space-y-4 w-full">
-                  <div className="relative bg-gradient-to-br from-primary/10 to-secondary/10 p-8 rounded-2xl shadow-lg mx-auto">
+                <div className="space-y-3 sm:space-y-4 w-full">
+                  <div className="relative bg-gradient-to-br from-primary/10 to-secondary/10 p-4 sm:p-6 md:p-8 rounded-xl sm:rounded-2xl shadow-lg mx-auto">
                     <div className={`text-center ${connectionStatus === "pairing_expired" ? "opacity-30" : ""}`}>
-                      <p className="text-sm text-muted-foreground mb-3">Kode Pairing Anda</p>
-                      <div className="text-6xl font-bold tracking-[0.5em] text-primary font-mono">
+                      <p className="text-xs sm:text-sm text-muted-foreground mb-2 sm:mb-3">Kode Pairing Anda</p>
+                      <div className="text-3xl sm:text-4xl md:text-6xl font-bold tracking-[0.3em] sm:tracking-[0.5em] text-primary font-mono">
                         {selectedDevice.pairing_code}
                       </div>
                     </div>
                     {connectionStatus === "pairing_expired" && (
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="bg-red-500 text-white px-6 py-3 rounded-lg font-medium">
+                        <div className="bg-red-500 text-white px-4 py-2 sm:px-6 sm:py-3 rounded-lg text-sm sm:text-base font-medium">
                           Kode Expired
                         </div>
                       </div>
                     )}
                   </div>
                   
-                  <div className="bg-muted p-4 rounded-lg">
-                    <p className="text-sm font-medium mb-2 text-center">📱 Cara pairing:</p>
-                    <ol className="text-xs text-muted-foreground space-y-1.5">
+                  <div className="bg-muted p-3 sm:p-4 rounded-lg">
+                    <p className="text-xs sm:text-sm font-medium mb-2 text-center">📱 Cara pairing:</p>
+                    <ol className="text-xs text-muted-foreground space-y-1 sm:space-y-1.5">
                       <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary">1.</span>
+                        <span className="font-bold text-primary min-w-[1rem]">1.</span>
                         <span>Buka WhatsApp di ponsel Anda</span>
                       </li>
                       <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary">2.</span>
+                        <span className="font-bold text-primary min-w-[1rem]">2.</span>
                         <span>Tap Menu (⋮) atau Settings (⚙️)</span>
                       </li>
                       <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary">3.</span>
+                        <span className="font-bold text-primary min-w-[1rem]">3.</span>
                         <span>Pilih "Linked Devices"</span>
                       </li>
                       <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary">4.</span>
+                        <span className="font-bold text-primary min-w-[1rem]">4.</span>
                         <span>Tap "Link a Device"</span>
                       </li>
                       <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary">5.</span>
+                        <span className="font-bold text-primary min-w-[1rem]">5.</span>
                         <span>Pilih "Link with phone number instead"</span>
                       </li>
                       <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary">6.</span>
+                        <span className="font-bold text-primary min-w-[1rem]">6.</span>
                         <span>Masukkan kode pairing di atas</span>
                       </li>
                     </ol>
@@ -838,9 +839,11 @@ export const Devices = () => {
                   <div className="flex items-center justify-center">
                     <Button
                       variant="outline"
+                      size="sm"
                       onClick={handleRefreshQR}
+                      className="text-xs sm:text-sm"
                     >
-                      <RefreshCw className="w-4 h-4 mr-2" />
+                      <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
                       Refresh Kode
                     </Button>
                   </div>
@@ -848,26 +851,26 @@ export const Devices = () => {
               )}
 
               {(connectionStatus === "qr_ready" || connectionStatus === "qr_expired") && selectedDevice?.qr_code && (
-                <div className="space-y-4 w-full">
-                  <div className="relative bg-white p-4 rounded-lg shadow-inner mx-auto w-fit">
+                <div className="space-y-3 sm:space-y-4 w-full">
+                  <div className="relative bg-white p-2 sm:p-3 md:p-4 rounded-lg shadow-inner mx-auto w-fit">
                     <img
                       src={selectedDevice.qr_code}
                       alt="QR Code"
-                      className={`w-72 h-72 ${connectionStatus === "qr_expired" ? "opacity-30" : ""}`}
+                      className={`w-48 h-48 sm:w-56 sm:h-56 md:w-72 md:h-72 ${connectionStatus === "qr_expired" ? "opacity-30" : ""}`}
                     />
                     {connectionStatus === "qr_expired" && (
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="bg-red-500 text-white px-6 py-3 rounded-lg font-medium">
+                        <div className="bg-red-500 text-white px-4 py-2 sm:px-6 sm:py-3 rounded-lg text-sm sm:text-base font-medium">
                           QR Expired
                         </div>
                       </div>
                     )}
                   </div>
                   
-                  <div className="flex items-center justify-between px-4">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between px-2 sm:px-4 gap-2">
+                    <div className="flex items-center gap-1.5 sm:gap-2">
                       <div className={`w-2 h-2 rounded-full ${qrExpiry > 10 ? "bg-green-500" : "bg-red-500"} animate-pulse`} />
-                      <span className="text-sm font-medium">
+                      <span className="text-xs sm:text-sm font-medium">
                         {connectionStatus === "qr_expired" ? "Expired" : `Berlaku ${qrExpiry} detik`}
                       </span>
                     </div>
@@ -875,33 +878,35 @@ export const Devices = () => {
                       size="sm"
                       variant="outline"
                       onClick={handleRefreshQR}
+                      className="text-xs sm:text-sm"
                     >
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                      Refresh QR
+                      <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+                      <span className="hidden sm:inline">Refresh QR</span>
+                      <span className="sm:hidden">Refresh</span>
                     </Button>
                   </div>
                   
-                  <div className="bg-muted p-4 rounded-lg">
-                    <p className="text-sm font-medium mb-2 text-center">📱 Cara scan QR:</p>
-                    <ol className="text-xs text-muted-foreground space-y-1.5">
+                  <div className="bg-muted p-3 sm:p-4 rounded-lg">
+                    <p className="text-xs sm:text-sm font-medium mb-2 text-center">📱 Cara scan QR:</p>
+                    <ol className="text-xs text-muted-foreground space-y-1 sm:space-y-1.5">
                       <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary">1.</span>
+                        <span className="font-bold text-primary min-w-[1rem]">1.</span>
                         <span>Buka WhatsApp di ponsel Anda</span>
                       </li>
                       <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary">2.</span>
+                        <span className="font-bold text-primary min-w-[1rem]">2.</span>
                         <span>Tap Menu (⋮) atau Settings (⚙️)</span>
                       </li>
                       <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary">3.</span>
+                        <span className="font-bold text-primary min-w-[1rem]">3.</span>
                         <span>Pilih "Linked Devices"</span>
                       </li>
                       <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary">4.</span>
+                        <span className="font-bold text-primary min-w-[1rem]">4.</span>
                         <span>Tap "Link a Device"</span>
                       </li>
                       <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary">5.</span>
+                        <span className="font-bold text-primary min-w-[1rem]">5.</span>
                         <span>Arahkan kamera ke QR code di atas</span>
                       </li>
                     </ol>
@@ -910,36 +915,38 @@ export const Devices = () => {
               )}
               
               {connectionStatus === "connected" && (
-                <div className="flex flex-col items-center gap-4 py-8">
-                  <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
-                    <span className="text-5xl">✓</span>
+                <div className="flex flex-col items-center gap-3 sm:gap-4 py-4 sm:py-8">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 bg-green-100 rounded-full flex items-center justify-center">
+                    <span className="text-4xl sm:text-5xl">✓</span>
                   </div>
-                  <p className="text-lg font-medium text-green-600">WhatsApp Terhubung!</p>
-                  <p className="text-sm text-muted-foreground text-center">
+                  <p className="text-base sm:text-lg font-medium text-green-600">WhatsApp Terhubung!</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground text-center px-4">
                     Device {selectedDevice?.device_name} berhasil terhubung
                   </p>
                 </div>
               )}
               
               {connectionStatus === "error" && (
-                <div className="flex flex-col items-center gap-4 py-8">
-                  <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center">
-                    <span className="text-5xl">✕</span>
+                <div className="flex flex-col items-center gap-3 sm:gap-4 py-4 sm:py-8">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 bg-red-100 rounded-full flex items-center justify-center">
+                    <span className="text-4xl sm:text-5xl">✕</span>
                   </div>
-                  <p className="text-lg font-medium text-red-600">Connection Error</p>
-                  <Button onClick={handleRefreshQR}>
-                    <RefreshCw className="w-4 h-4 mr-2" />
+                  <p className="text-base sm:text-lg font-medium text-red-600">Connection Error</p>
+                  <Button onClick={handleRefreshQR} size="sm" className="text-xs sm:text-sm">
+                    <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
                     Coba Lagi
                   </Button>
                 </div>
               )}
 
               {connectionStatus !== "connected" && connectionStatus !== "idle" && (
-                <div className="flex items-center justify-center gap-3 pt-2">
-                  <Button variant="outline" onClick={handleCancelConnect}>Batal</Button>
+                <div className="flex items-center justify-center gap-2 sm:gap-3 pt-2">
+                  <Button variant="outline" size="sm" onClick={handleCancelConnect} className="text-xs sm:text-sm">
+                    Batal
+                  </Button>
                   {(connectionStatus === "qr_ready" || connectionStatus === "qr_expired" || connectionStatus === "pairing_ready" || connectionStatus === "pairing_expired" || connectionStatus === "error") && (
-                    <Button onClick={handleRefreshQR}>
-                      <RefreshCw className="w-4 h-4 mr-2" />
+                    <Button onClick={handleRefreshQR} size="sm" className="text-xs sm:text-sm">
+                      <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
                       {selectedDevice?.connection_method === 'pairing' ? 'Refresh Kode' : 'Refresh QR'}
                     </Button>
                   )}
