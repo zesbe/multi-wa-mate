@@ -96,17 +96,11 @@ async function connectWhatsApp(device) {
   console.log(`📱 Connecting device: ${device.device_name} (${device.id})`);
 
   try {
-    // Clear old auth folder first to avoid corrupt sessions
     const authPath = `./auth_info_${device.id}`;
     const fs = require('fs');
-    const path = require('path');
-    
-    // Remove old auth folder if exists
-    if (fs.existsSync(authPath)) {
-      console.log(`🗑️ Removing old auth folder: ${authPath}`);
-      fs.rmSync(authPath, { recursive: true, force: true });
+    if (!fs.existsSync(authPath)) {
+      fs.mkdirSync(authPath, { recursive: true });
     }
-    
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
 
     // Use latest WhatsApp Web version to avoid handshake issues
@@ -197,56 +191,49 @@ async function connectWhatsApp(device) {
 
       // Disconnected
       if (connection === 'close') {
-        const statusCode = lastDisconnect?.error?.output?.statusCode;
-        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-        
+        const code = lastDisconnect?.error?.output?.statusCode;
+        const message = lastDisconnect?.error?.message || '';
+        const restartRequired = code === DisconnectReason.restartRequired || code === 515 || /restart required/i.test(message);
+        const loggedOut = code === DisconnectReason.loggedOut;
+
         console.log('🔌 Connection closed');
-        console.log('📊 Disconnect statusCode:', statusCode);
-        console.log('🧾 Error message:', lastDisconnect?.error?.message);
+        console.log('📊 Disconnect statusCode:', code);
+        console.log('🧾 Error message:', message);
 
         activeSockets.delete(device.id);
-        
-        // Remove auth folder on disconnect to ensure clean state
-        const authPath = `./auth_info_${device.id}`;
-        const fs = require('fs');
-        if (fs.existsSync(authPath)) {
-          console.log(`🗑️ Cleaning auth folder on disconnect`);
-          fs.rmSync(authPath, { recursive: true, force: true });
-        }
 
         try {
-          if (shouldReconnect && statusCode !== 405) {
-            // Only retry if not 405 error
-            console.log('⚠️ Will retry connection');
-            await supabase
-              .from('devices')
-              .update({ 
-                status: 'disconnected',
-                qr_code: null 
-              })
-              .eq('id', device.id);
-          } else if (statusCode === 405) {
-            // 405 error - auth issue, set to error
-            console.log('❌ Error 405 detected - Authentication failed');
-            await supabase
-              .from('devices')
-              .update({ 
-                status: 'error',
-                qr_code: null 
-              })
-              .eq('id', device.id);
+          if (restartRequired) {
+            // keep auth, set to connecting and re-connect
+            console.log('♻️ Restart required - reconnecting');
+            await supabase.from('devices').update({ status: 'connecting' }).eq('id', device.id);
+            setTimeout(() => {
+              if (!activeSockets.has(device.id)) {
+                connectWhatsApp(device).catch(() => {});
+              }
+            }, 1500);
+          } else if (code === 405) {
+            // Likely bad auth: clear auth and set error
+            console.log('❌ 405 Authentication failed - clearing session');
+            const fs = require('fs');
+            const authPath = `./auth_info_${device.id}`;
+            if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true, force: true });
+            await supabase.from('devices').update({ status: 'error', qr_code: null }).eq('id', device.id);
+          } else if (loggedOut) {
+            console.log('👋 Logged out - clearing session');
+            const fs = require('fs');
+            const authPath = `./auth_info_${device.id}`;
+            if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true, force: true });
+            await supabase.from('devices').update({ status: 'disconnected', phone_number: null, qr_code: null }).eq('id', device.id);
           } else {
-            // Logged out
-            await supabase
-              .from('devices')
-              .update({ 
-                status: 'disconnected',
-                phone_number: null,
-                qr_code: null
-              })
-              .eq('id', device.id);
-            
-            console.log('👋 Device logged out');
+            // Other transient errors -> retry
+            console.log('⚠️ Transient error - retrying connection');
+            await supabase.from('devices').update({ status: 'connecting' }).eq('id', device.id);
+            setTimeout(() => {
+              if (!activeSockets.has(device.id)) {
+                connectWhatsApp(device).catch(() => {});
+              }
+            }, 1500);
           }
         } catch (discError) {
           console.error('❌ Error handling disconnection:', discError);
