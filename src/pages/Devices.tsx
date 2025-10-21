@@ -33,6 +33,8 @@ export const Devices = () => {
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [deviceName, setDeviceName] = useState("");
   const [ws, setWs] = useState<WebSocket | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<string>("idle");
+  const [qrExpiry, setQrExpiry] = useState<number>(0);
 
   useEffect(() => {
     fetchDevices();
@@ -50,15 +52,37 @@ export const Devices = () => {
         (payload) => {
           console.log('Device update:', payload);
           fetchDevices();
+          
+          // Auto-close dialog when connected
+          if (payload.eventType === 'UPDATE' && payload.new?.status === 'connected') {
+            setTimeout(() => {
+              setQrDialogOpen(false);
+              setConnectionStatus("idle");
+            }, 1500);
+          }
         }
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
-      ws?.close();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
     };
-  }, [ws]);
+  }, []);
+
+  // QR expiry countdown
+  useEffect(() => {
+    if (qrExpiry > 0 && qrDialogOpen) {
+      const timer = setTimeout(() => {
+        setQrExpiry(qrExpiry - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (qrExpiry === 0 && connectionStatus === "qr_ready") {
+      setConnectionStatus("qr_expired");
+    }
+  }, [qrExpiry, qrDialogOpen, connectionStatus]);
 
   const fetchDevices = async () => {
     try {
@@ -104,9 +128,14 @@ export const Devices = () => {
   const handleConnectDevice = async (device: Device) => {
     setSelectedDevice(device);
     setQrDialogOpen(true);
+    setConnectionStatus("connecting");
+    setQrExpiry(60); // 60 seconds expiry
     
     try {
-      toast.info("Connecting to WhatsApp...");
+      // Close existing WebSocket if any
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
       
       // Create WebSocket connection to Baileys edge function
       const wsUrl = `wss://ierdfxgeectqoekugyvb.supabase.co/functions/v1/whatsapp-baileys?deviceId=${device.id}`;
@@ -114,7 +143,7 @@ export const Devices = () => {
       
       websocket.onopen = () => {
         console.log('WebSocket connected');
-        toast.success("Connected to WhatsApp server");
+        setConnectionStatus("generating_qr");
       };
       
       websocket.onmessage = (event) => {
@@ -123,28 +152,47 @@ export const Devices = () => {
         
         if (data.type === 'qr') {
           setSelectedDevice(prev => prev ? { ...prev, qr_code: data.qr } : null);
-          toast.success("QR Code generated! Scan dengan WhatsApp Anda");
+          setConnectionStatus("qr_ready");
+          setQrExpiry(60); // Reset timer when new QR is generated
+          toast.success("QR Code ready! Scan sekarang");
         } else if (data.type === 'connected') {
-          toast.success("WhatsApp connected successfully!");
-          setQrDialogOpen(false);
+          setConnectionStatus("connected");
+          toast.success("WhatsApp berhasil terhubung!");
           fetchDevices();
         } else if (data.type === 'error') {
+          setConnectionStatus("error");
           toast.error(data.error);
         }
       };
       
       websocket.onerror = (error) => {
         console.error('WebSocket error:', error);
-        toast.error("Connection error");
+        setConnectionStatus("error");
+        toast.error("Connection error. Silakan coba lagi.");
       };
       
       websocket.onclose = () => {
         console.log('WebSocket closed');
+        if (connectionStatus !== "connected") {
+          setConnectionStatus("idle");
+        }
       };
       
       setWs(websocket);
     } catch (error: any) {
+      setConnectionStatus("error");
       toast.error(error.message);
+    }
+  };
+
+  const handleRefreshQR = () => {
+    if (selectedDevice) {
+      // Close existing connection
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+      // Reconnect
+      handleConnectDevice(selectedDevice);
     }
   };
 
@@ -266,9 +314,33 @@ export const Devices = () => {
         </div>
 
         {loading ? (
-          <div className="text-center py-12">
-            <RefreshCw className="w-8 h-8 animate-spin mx-auto text-muted-foreground" />
-          </div>
+          <Card>
+            <CardContent className="p-6">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-4 border-b">
+                  <div className="h-6 bg-muted animate-pulse rounded w-32" />
+                  <div className="h-6 bg-muted animate-pulse rounded w-32" />
+                  <div className="h-6 bg-muted animate-pulse rounded w-24" />
+                  <div className="h-6 bg-muted animate-pulse rounded w-32" />
+                  <div className="h-6 bg-muted animate-pulse rounded w-24" />
+                  <div className="h-6 bg-muted animate-pulse rounded w-40" />
+                </div>
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center justify-between py-4 border-b">
+                    <div className="h-10 bg-muted animate-pulse rounded w-32" />
+                    <div className="h-10 bg-muted animate-pulse rounded w-40" />
+                    <div className="h-10 bg-muted animate-pulse rounded w-24" />
+                    <div className="h-10 bg-muted animate-pulse rounded w-32" />
+                    <div className="h-10 bg-muted animate-pulse rounded w-24" />
+                    <div className="flex gap-2">
+                      <div className="h-10 w-24 bg-muted animate-pulse rounded" />
+                      <div className="h-10 w-24 bg-muted animate-pulse rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         ) : devices.length === 0 ? (
           <Card>
             <CardContent className="text-center py-12">
@@ -286,148 +358,247 @@ export const Devices = () => {
         ) : (
           <Card>
             <CardContent className="p-6">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Device</TableHead>
-                    <TableHead>API Key</TableHead>
-                    <TableHead>Server ID</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Webhook Media</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {devices.map((device) => (
-                    <TableRow key={device.id}>
-                      <TableCell>
-                        <div className="flex flex-col gap-1">
-                          <span className="font-medium">{device.device_name}</span>
-                          {device.is_multidevice && (
-                            <Badge className="bg-green-500 text-white w-fit text-xs">
-                              Multidevice
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <code className="text-xs bg-muted px-2 py-1 rounded">
-                            {device.api_key?.substring(0, 8)}...
-                          </code>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => copyToClipboard(device.api_key || '')}
-                          >
-                            <Copy className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm">{device.server_id || '-'}</span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getStatusColor(device.status)}>
-                          {getStatusText(device.status)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-muted-foreground">
-                          {device.webhook_url || '-'}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-2 justify-end">
-                          {device.status === "disconnected" && (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead className="font-semibold">Device</TableHead>
+                      <TableHead className="font-semibold">API Key</TableHead>
+                      <TableHead className="font-semibold">Server ID</TableHead>
+                      <TableHead className="font-semibold">Status</TableHead>
+                      <TableHead className="font-semibold">Webhook Media</TableHead>
+                      <TableHead className="text-right font-semibold">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {devices.map((device) => (
+                      <TableRow key={device.id} className="hover:bg-muted/30 transition-colors">
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <span className="font-medium">{device.device_name}</span>
+                            {device.is_multidevice && (
+                              <Badge className="bg-green-500 text-white w-fit text-xs">
+                                Multidevice
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
+                              {device.api_key?.substring(0, 10)}...
+                            </code>
                             <Button
                               size="sm"
-                              onClick={() => handleConnectDevice(device)}
-                              className="bg-blue-500 hover:bg-blue-600 text-white"
+                              variant="ghost"
+                              className="h-7 w-7 p-0"
+                              onClick={() => copyToClipboard(device.api_key || '')}
+                              title="Copy API Key"
                             >
-                              Scan QR
+                              <Copy className="w-3 h-3" />
                             </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleDetail(device)}
-                            className="border-orange-500 text-orange-500 hover:bg-orange-50"
-                          >
-                            <Info className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => handleDeleteDevice(device.id)}
-                            className="bg-red-500 hover:bg-red-600"
-                          >
-                            Hapus
-                          </Button>
-                          {device.status === "connected" && (
-                            <>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm font-mono">{device.server_id || '-'}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getStatusColor(device.status)}>
+                            {getStatusText(device.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm text-muted-foreground truncate max-w-[150px] block">
+                            {device.webhook_url || '-'}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1.5 justify-end">
+                            {device.status === "disconnected" && (
                               <Button
                                 size="sm"
-                                variant="outline"
-                                onClick={() => handleRelog(device)}
-                                className="border-pink-500 text-pink-500 hover:bg-pink-50"
+                                onClick={() => handleConnectDevice(device)}
+                                className="bg-blue-500 hover:bg-blue-600 text-white text-xs h-8"
                               >
-                                <RotateCcw className="w-4 h-4" />
+                                <QrCode className="w-3 h-3 mr-1" />
+                                Scan QR
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleLogout(device)}
-                                className="border-blue-500 text-blue-500 hover:bg-blue-50"
-                              >
-                                <LogOut className="w-4 h-4" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleDetail(device)}
+                              className="border-orange-500 text-orange-500 hover:bg-orange-50 h-8 w-8 p-0"
+                              title="Detail"
+                            >
+                              <Info className="w-3 h-3" />
+                            </Button>
+                            {device.status === "connected" && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleRelog(device)}
+                                  className="border-pink-500 text-pink-500 hover:bg-pink-50 h-8 w-8 p-0"
+                                  title="Relog"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleLogout(device)}
+                                  className="border-blue-500 text-blue-500 hover:bg-blue-50 h-8 w-8 p-0"
+                                  title="Logout"
+                                >
+                                  <LogOut className="w-3 h-3" />
+                                </Button>
+                              </>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => handleDeleteDevice(device.id)}
+                              className="bg-red-500 hover:bg-red-600 h-8 w-8 p-0"
+                              title="Hapus"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         )}
 
         {/* QR Code Dialog */}
-        <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
-          <DialogContent className="sm:max-w-md">
+        <Dialog open={qrDialogOpen} onOpenChange={(open) => {
+          setQrDialogOpen(open);
+          if (!open) {
+            setConnectionStatus("idle");
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.close();
+            }
+          }
+        }}>
+          <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>Scan QR Code</DialogTitle>
-              <DialogDescription>
-                Buka WhatsApp di ponsel Anda dan scan QR code ini
+              <DialogTitle className="text-center text-xl">
+                {connectionStatus === "connected" ? "✅ Berhasil Terhubung!" : "Scan QR Code"}
+              </DialogTitle>
+              <DialogDescription className="text-center">
+                {connectionStatus === "connecting" && "Menghubungkan ke server..."}
+                {connectionStatus === "generating_qr" && "Membuat QR code..."}
+                {connectionStatus === "qr_ready" && `QR code siap di-scan (${qrExpiry}s)`}
+                {connectionStatus === "qr_expired" && "QR code expired"}
+                {connectionStatus === "connected" && "WhatsApp berhasil terhubung!"}
+                {connectionStatus === "error" && "Terjadi kesalahan"}
               </DialogDescription>
             </DialogHeader>
-            <div className="flex justify-center p-6">
-              {selectedDevice?.qr_code ? (
-                <div className="space-y-4">
-                  <div className="bg-white p-4 rounded-lg">
+            
+            <div className="flex flex-col items-center justify-center p-6 space-y-4">
+              {connectionStatus === "connecting" && (
+                <div className="flex flex-col items-center gap-4">
+                  <RefreshCw className="w-12 h-12 animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">Menghubungkan ke server WhatsApp...</p>
+                </div>
+              )}
+              
+              {connectionStatus === "generating_qr" && (
+                <div className="flex flex-col items-center gap-4">
+                  <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                  <p className="text-sm text-muted-foreground">Membuat QR code...</p>
+                </div>
+              )}
+              
+              {(connectionStatus === "qr_ready" || connectionStatus === "qr_expired") && selectedDevice?.qr_code && (
+                <div className="space-y-4 w-full">
+                  <div className="relative bg-white p-4 rounded-lg shadow-inner mx-auto w-fit">
                     <img
                       src={selectedDevice.qr_code}
                       alt="QR Code"
-                      className="w-64 h-64"
+                      className={`w-72 h-72 ${connectionStatus === "qr_expired" ? "opacity-30" : ""}`}
                     />
+                    {connectionStatus === "qr_expired" && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="bg-red-500 text-white px-6 py-3 rounded-lg font-medium">
+                          QR Expired
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <div className="text-center space-y-2">
-                    <p className="text-sm font-medium">Cara scan:</p>
-                    <ol className="text-xs text-muted-foreground space-y-1 text-left">
-                      <li>1. Buka WhatsApp di ponsel Anda</li>
-                      <li>2. Tap Menu atau Settings</li>
-                      <li>3. Tap Linked Devices</li>
-                      <li>4. Tap Link a Device</li>
-                      <li>5. Arahkan ponsel ke layar ini untuk scan</li>
+                  
+                  <div className="flex items-center justify-between px-4">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${qrExpiry > 10 ? "bg-green-500" : "bg-red-500"} animate-pulse`} />
+                      <span className="text-sm font-medium">
+                        {connectionStatus === "qr_expired" ? "Expired" : `Berlaku ${qrExpiry} detik`}
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleRefreshQR}
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Refresh QR
+                    </Button>
+                  </div>
+                  
+                  <div className="bg-muted p-4 rounded-lg">
+                    <p className="text-sm font-medium mb-2 text-center">📱 Cara scan QR:</p>
+                    <ol className="text-xs text-muted-foreground space-y-1.5">
+                      <li className="flex items-start gap-2">
+                        <span className="font-bold text-primary">1.</span>
+                        <span>Buka WhatsApp di ponsel Anda</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="font-bold text-primary">2.</span>
+                        <span>Tap Menu (⋮) atau Settings (⚙️)</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="font-bold text-primary">3.</span>
+                        <span>Pilih "Linked Devices"</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="font-bold text-primary">4.</span>
+                        <span>Tap "Link a Device"</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="font-bold text-primary">5.</span>
+                        <span>Arahkan kamera ke QR code di atas</span>
+                      </li>
                     </ol>
                   </div>
                 </div>
-              ) : (
-                <div className="flex flex-col items-center gap-4">
-                  <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-                  <p className="text-sm text-muted-foreground">Generating QR code...</p>
+              )}
+              
+              {connectionStatus === "connected" && (
+                <div className="flex flex-col items-center gap-4 py-8">
+                  <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
+                    <span className="text-5xl">✓</span>
+                  </div>
+                  <p className="text-lg font-medium text-green-600">WhatsApp Terhubung!</p>
+                  <p className="text-sm text-muted-foreground text-center">
+                    Device {selectedDevice?.device_name} berhasil terhubung
+                  </p>
+                </div>
+              )}
+              
+              {connectionStatus === "error" && (
+                <div className="flex flex-col items-center gap-4 py-8">
+                  <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center">
+                    <span className="text-5xl">✕</span>
+                  </div>
+                  <p className="text-lg font-medium text-red-600">Connection Error</p>
+                  <Button onClick={handleRefreshQR}>
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Coba Lagi
+                  </Button>
                 </div>
               )}
             </div>
