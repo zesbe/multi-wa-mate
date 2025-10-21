@@ -428,8 +428,17 @@ async function processBroadcasts() {
         // Send to each target contact
         for (const contact of broadcast.target_contacts) {
           try {
+            // Extract phone number from contact object or use as string
+            const phoneNumber = typeof contact === 'object' ? contact.phone_number : contact;
+            
+            if (!phoneNumber) {
+              console.error('❌ Invalid contact:', contact);
+              failedCount++;
+              continue;
+            }
+            
             // Format phone number (ensure it has @s.whatsapp.net suffix)
-            const jid = contact.includes('@') ? contact : `${contact}@s.whatsapp.net`;
+            const jid = phoneNumber.includes('@') ? phoneNumber : `${phoneNumber}@s.whatsapp.net`;
             
             // Send message
             await sock.sendMessage(jid, { 
@@ -437,7 +446,7 @@ async function processBroadcasts() {
             });
             
             sentCount++;
-            console.log(`✅ Sent to ${contact}`);
+            console.log(`✅ Sent to ${phoneNumber}`);
             
             // Add small delay between messages to avoid rate limiting
             await new Promise(resolve => setTimeout(resolve, 1000));
