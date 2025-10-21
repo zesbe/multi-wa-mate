@@ -4,7 +4,7 @@ if (!global.crypto) {
   global.crypto = webcrypto;
 }
 
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } = require('@whiskeysockets/baileys');
 const { createClient } = require('@supabase/supabase-js');
 const qrcode = require('qrcode-terminal');
 const QRCode = require('qrcode');
@@ -99,10 +99,17 @@ async function connectWhatsApp(device) {
     const authPath = `./auth_info_${device.id}`;
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
 
+    // Use latest WhatsApp Web version to avoid handshake issues
+    const { version } = await fetchLatestBaileysVersion();
+
     const sock = makeWASocket({
+      version,
       auth: state,
       printQRInTerminal: false, // We'll handle QR ourselves
-      browser: ['Multi WA Mate', 'Chrome', '1.0.0'],
+      browser: Browsers.appropriate('Desktop'),
+      connectTimeoutMs: 60_000,
+      keepAliveIntervalMs: 10_000,
+      syncFullHistory: false,
     });
 
     activeSockets.set(device.id, sock);
@@ -181,7 +188,8 @@ async function connectWhatsApp(device) {
       if (connection === 'close') {
         const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
         console.log('🔌 Connection closed. Reconnect:', shouldReconnect);
-        console.log('📊 Disconnect reason:', lastDisconnect?.error?.output?.statusCode);
+        console.log('📊 Disconnect statusCode:', lastDisconnect?.error?.output?.statusCode);
+        console.log('🧾 Disconnect error detail:', lastDisconnect?.error);
 
         activeSockets.delete(device.id);
 
