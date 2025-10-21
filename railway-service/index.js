@@ -39,6 +39,9 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 // Store active WhatsApp sockets
 const activeSockets = new Map();
 
+// Track broadcasts currently being processed to prevent duplicates
+const processingBroadcasts = new Set();
+
 // Polling mechanism - lebih reliable daripada realtime untuk Railway
 async function startService() {
   console.log('🚀 WhatsApp Baileys Service Started');
@@ -566,6 +569,15 @@ async function processBroadcasts() {
     console.log(`📤 Processing ${broadcasts.length} broadcast(s)`);
 
     for (const broadcast of broadcasts) {
+      // Skip if already being processed (prevent duplicates)
+      if (processingBroadcasts.has(broadcast.id)) {
+        console.log(`⏭️ Skipping broadcast ${broadcast.id} - already processing`);
+        continue;
+      }
+
+      // Mark as processing
+      processingBroadcasts.add(broadcast.id);
+
       try {
         // Get the socket for this device
         const sock = activeSockets.get(broadcast.device_id);
@@ -615,41 +627,75 @@ async function processBroadcasts() {
             let messageContent;
             
             if (broadcast.media_url) {
-              // Send media message
-              try {
-                const mediaType = getMediaType(broadcast.media_url);
-                const response = await fetch(broadcast.media_url);
-                const buffer = await response.arrayBuffer();
-                
-                if (mediaType === 'image') {
-                  messageContent = {
-                    image: Buffer.from(buffer),
-                    caption: broadcast.message || ''
-                  };
-                } else if (mediaType === 'video') {
-                  messageContent = {
-                    video: Buffer.from(buffer),
-                    caption: broadcast.message || ''
-                  };
-                } else if (mediaType === 'audio') {
-                  messageContent = {
-                    audio: Buffer.from(buffer),
-                    mimetype: 'audio/mp4'
-                  };
-                } else if (mediaType === 'document') {
-                  messageContent = {
-                    document: Buffer.from(buffer),
-                    caption: broadcast.message || '',
-                    mimetype: 'application/pdf'
-                  };
-                } else {
-                  // Fallback to text message
-                  messageContent = { text: broadcast.message };
+              // Send media message with retry logic
+              let mediaLoaded = false;
+              let retryCount = 0;
+              const maxRetries = 3;
+              
+              while (!mediaLoaded && retryCount < maxRetries) {
+                try {
+                  const mediaType = getMediaType(broadcast.media_url);
+                  console.log(`📥 Downloading media (attempt ${retryCount + 1}/${maxRetries}): ${broadcast.media_url}`);
+                  
+                  const response = await fetch(broadcast.media_url, {
+                    headers: {
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                  });
+                  
+                  if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                  }
+                  
+                  const buffer = await response.arrayBuffer();
+                  
+                  if (buffer.byteLength === 0) {
+                    throw new Error('Downloaded file is empty (0 bytes)');
+                  }
+                  
+                  console.log(`✅ Media downloaded: ${buffer.byteLength} bytes`);
+                  
+                  if (mediaType === 'image') {
+                    messageContent = {
+                      image: Buffer.from(buffer),
+                      caption: broadcast.message || ''
+                    };
+                  } else if (mediaType === 'video') {
+                    messageContent = {
+                      video: Buffer.from(buffer),
+                      caption: broadcast.message || ''
+                    };
+                  } else if (mediaType === 'audio') {
+                    messageContent = {
+                      audio: Buffer.from(buffer),
+                      mimetype: 'audio/mp4'
+                    };
+                  } else if (mediaType === 'document') {
+                    messageContent = {
+                      document: Buffer.from(buffer),
+                      caption: broadcast.message || '',
+                      mimetype: 'application/pdf'
+                    };
+                  } else {
+                    // Fallback to text message
+                    messageContent = { text: broadcast.message };
+                  }
+                  
+                  mediaLoaded = true;
+                } catch (mediaError) {
+                  retryCount++;
+                  console.error(`❌ Error loading media (attempt ${retryCount}/${maxRetries}):`, mediaError.message);
+                  
+                  if (retryCount >= maxRetries) {
+                    console.error('❌ Max retries reached, sending text only');
+                    // Fallback to text only after max retries
+                    messageContent = { text: broadcast.message };
+                    mediaLoaded = true;
+                  } else {
+                    // Wait before retry
+                    await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                  }
                 }
-              } catch (mediaError) {
-                console.error('❌ Error loading media:', mediaError);
-                // Fallback to text only
-                messageContent = { text: broadcast.message };
               }
             } else {
               // Text only message
@@ -695,6 +741,9 @@ async function processBroadcasts() {
             updated_at: new Date().toISOString()
           })
           .eq('id', broadcast.id);
+      } finally {
+        // Remove from processing set when done
+        processingBroadcasts.delete(broadcast.id);
       }
     }
   } catch (error) {
