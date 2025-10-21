@@ -10,10 +10,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Calendar, Clock, Send, XCircle, Edit, Trash2, CheckCircle2, Image as ImageIcon, Users, X, Upload, Loader2, Info, Zap } from "lucide-react";
+import { Plus, Calendar, Clock, Send, XCircle, Edit, Trash2, CheckCircle2, Image as ImageIcon, Users, X, Upload, Loader2, Info, Zap, Globe } from "lucide-react";
 import { BroadcastSafetyWarning } from "@/components/BroadcastSafetyWarning";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
+import { 
+  convertLocalToUTC, 
+  formatUTCToLocalInput, 
+  formatUTCToLocalDisplay,
+  getCurrentLocalTime,
+  getUserTimezone,
+  setUserTimezone,
+  TIMEZONES,
+  getTimezoneDisplay
+} from "@/utils/timezone";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -64,6 +74,7 @@ export default function Scheduled() {
   const [currentNumber, setCurrentNumber] = useState("");
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
   const [contactSearch, setContactSearch] = useState("");
+  const [userTimezone, setUserTimezoneState] = useState(getUserTimezone());
   const [formData, setFormData] = useState({
     name: "",
     message: "",
@@ -149,13 +160,16 @@ export default function Scheduled() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
+      // Convert local time to UTC before saving
+      const utcScheduledAt = convertLocalToUTC(formData.scheduled_at, userTimezone);
+
       const { error } = await supabase.from("broadcasts").insert({
         user_id: user.id,
         device_id: formData.device_id,
         name: formData.name,
         message: formData.message,
         media_url: formData.media_url,
-        scheduled_at: formData.scheduled_at,
+        scheduled_at: utcScheduledAt,
         target_contacts: allTargets,
         status: "draft",
         delay_type: formData.delay_type,
@@ -296,7 +310,9 @@ export default function Scheduled() {
 
   const handleEditSchedule = (broadcast: Broadcast) => {
     setSelectedBroadcast(broadcast);
-    setNewScheduledTime(broadcast.scheduled_at?.slice(0, 16) || "");
+    // Convert UTC to local time for editing
+    const localTime = broadcast.scheduled_at ? formatUTCToLocalInput(broadcast.scheduled_at, userTimezone) : "";
+    setNewScheduledTime(localTime);
     setEditDialogOpen(true);
   };
 
@@ -305,9 +321,12 @@ export default function Scheduled() {
 
     setActionLoading(selectedBroadcast.id);
     try {
+      // Convert local time to UTC before saving
+      const utcScheduledAt = convertLocalToUTC(newScheduledTime, userTimezone);
+      
       const { error } = await supabase
         .from("broadcasts")
-        .update({ scheduled_at: newScheduledTime })
+        .update({ scheduled_at: utcScheduledAt })
         .eq("id", selectedBroadcast.id);
 
       if (error) throw error;
@@ -373,14 +392,14 @@ export default function Scheduled() {
   };
 
   const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString('id-ID', {
-      weekday: 'short',
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    // Use timezone-aware formatting
+    return formatUTCToLocalDisplay(dateString, userTimezone, 'EEE, dd MMM yyyy HH:mm');
+  };
+
+  const handleTimezoneChange = (newTimezone: string) => {
+    setUserTimezoneState(newTimezone);
+    setUserTimezone(newTimezone);
+    toast.success(`Timezone diubah ke ${TIMEZONES.find(tz => tz.value === newTimezone)?.label}`);
   };
 
   const getStatusColor = (status: string) => {
@@ -431,8 +450,7 @@ export default function Scheduled() {
                   <Clock className="w-3 h-3 mr-1" />
                   <span className="hidden sm:inline">{formatDateTime(broadcast.scheduled_at)}</span>
                   <span className="sm:hidden">
-                    {new Date(broadcast.scheduled_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })}{' '}
-                    {new Date(broadcast.scheduled_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                    {formatUTCToLocalDisplay(broadcast.scheduled_at, userTimezone, 'dd MMM HH:mm')}
                   </span>
                 </Badge>
               )}
@@ -546,11 +564,28 @@ export default function Scheduled() {
     <Layout>
       <div className="space-y-4 md:space-y-8">
         <div className="flex flex-col gap-3">
-          <div>
-            <h1 className="text-2xl md:text-4xl font-bold text-foreground mb-1 md:mb-2">Jadwal Broadcast</h1>
-            <p className="text-sm md:text-base text-muted-foreground">
-              Buat dan kelola broadcast terjadwal
-            </p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl md:text-4xl font-bold text-foreground mb-1 md:mb-2">Jadwal Broadcast</h1>
+              <p className="text-sm md:text-base text-muted-foreground">
+                Buat dan kelola broadcast terjadwal
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Globe className="w-4 h-4 text-muted-foreground" />
+              <Select value={userTimezone} onValueChange={handleTimezoneChange}>
+                <SelectTrigger className="h-9 w-[180px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIMEZONES.map((tz) => (
+                    <SelectItem key={tz.value} value={tz.value} className="text-xs">
+                      {tz.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
@@ -615,18 +650,19 @@ export default function Scheduled() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="scheduled" className="text-base md:text-sm">Jadwal Pengiriman</Label>
+                    <Label htmlFor="scheduled" className="text-base md:text-sm">Jadwal Pengiriman ({getTimezoneDisplay(userTimezone)})</Label>
                     <Input
                       id="scheduled"
                       type="datetime-local"
                       value={formData.scheduled_at}
                       onChange={(e) => setFormData({ ...formData, scheduled_at: e.target.value })}
-                      min={new Date().toISOString().slice(0, 16)}
+                      min={getCurrentLocalTime(userTimezone)}
                       className="h-12 md:h-10 text-base"
                       required
                     />
-                    <p className="text-xs md:text-xs text-muted-foreground">
-                      Pilih waktu untuk pengiriman otomatis
+                    <p className="text-xs md:text-xs text-muted-foreground flex items-center gap-1">
+                      <Globe className="w-3 h-3" />
+                      Waktu lokal Anda: {TIMEZONES.find(tz => tz.value === userTimezone)?.label}
                     </p>
                   </div>
 
@@ -960,15 +996,19 @@ export default function Scheduled() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="new-schedule" className="text-base md:text-sm">Jadwal Baru</Label>
+              <Label htmlFor="new-schedule" className="text-base md:text-sm">Jadwal Baru ({getTimezoneDisplay(userTimezone)})</Label>
               <Input
                 id="new-schedule"
                 type="datetime-local"
                 value={newScheduledTime}
                 onChange={(e) => setNewScheduledTime(e.target.value)}
-                min={new Date().toISOString().slice(0, 16)}
+                min={getCurrentLocalTime(userTimezone)}
                 className="h-12 md:h-10 text-base"
               />
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Globe className="w-3 h-3" />
+                {TIMEZONES.find(tz => tz.value === userTimezone)?.label}
+              </p>
             </div>
           </div>
           <div className="flex gap-2">
