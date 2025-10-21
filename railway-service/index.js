@@ -1,0 +1,271 @@
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { createClient } = require('@supabase/supabase-js');
+const qrcode = require('qrcode-terminal');
+const QRCode = require('qrcode');
+
+// Supabase config dari environment variables
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error('❌ Missing environment variables: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+  process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Store active WhatsApp sockets
+const activeSockets = new Map();
+
+// Listen to devices table for 'connecting' status
+async function startService() {
+  console.log('🚀 WhatsApp Baileys Service Started');
+  console.log('📡 Listening to devices table...');
+  console.log('🔗 Supabase URL:', supabaseUrl);
+
+  // Subscribe to real-time changes
+  const channel = supabase
+    .channel('devices-listener')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'devices'
+      },
+      async (payload) => {
+        console.log('📱 Device change detected:', payload.eventType, payload.new?.device_name);
+
+        if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+          const device = payload.new;
+
+          // Start connection if status is 'connecting'
+          if (device.status === 'connecting' && !activeSockets.has(device.id)) {
+            console.log(`🔄 Starting connection for device: ${device.device_name}`);
+            await connectWhatsApp(device);
+          }
+
+          // Disconnect if status is 'disconnected'
+          if (device.status === 'disconnected' && activeSockets.has(device.id)) {
+            const sock = activeSockets.get(device.id);
+            sock?.end();
+            activeSockets.delete(device.id);
+            console.log(`❌ Disconnected device: ${device.device_name}`);
+          }
+        }
+      }
+    )
+    .subscribe((status) => {
+      console.log('📡 Subscription status:', status);
+    });
+
+  // Initial check for any 'connecting' devices
+  console.log('🔍 Checking for pending connections...');
+  const { data: devices, error } = await supabase
+    .from('devices')
+    .select('*')
+    .eq('status', 'connecting');
+
+  if (error) {
+    console.error('❌ Error fetching devices:', error);
+    return;
+  }
+
+  console.log(`📋 Found ${devices?.length || 0} devices with 'connecting' status`);
+
+  // Connect all pending devices
+  if (devices && devices.length > 0) {
+    for (const device of devices) {
+      if (!activeSockets.has(device.id)) {
+        await connectWhatsApp(device);
+      }
+    }
+  }
+}
+
+async function connectWhatsApp(device) {
+  console.log(`📱 Connecting device: ${device.device_name} (${device.id})`);
+
+  try {
+    // Use multi-file auth state stored in memory
+    const authPath = `./auth_info_${device.id}`;
+    const { state, saveCreds } = await useMultiFileAuthState(authPath);
+
+    const sock = makeWASocket({
+      auth: state,
+      printQRInTerminal: false, // We'll handle QR ourselves
+      browser: ['Multi WA Mate', 'Chrome', '1.0.0'],
+    });
+
+    activeSockets.set(device.id, sock);
+
+    // Handle connection updates
+    sock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+
+      // Generate QR code
+      if (qr) {
+        console.log('📷 QR Code generated for', device.device_name);
+        
+        try {
+          // Generate QR as data URL
+          const qrDataUrl = await QRCode.toDataURL(qr);
+
+          // Update database with QR code
+          const { error } = await supabase
+            .from('devices')
+            .update({ 
+              qr_code: qrDataUrl,
+              status: 'connecting'
+            })
+            .eq('id', device.id);
+
+          if (error) {
+            console.error('❌ Error saving QR to database:', error);
+          } else {
+            console.log('✅ QR saved to database');
+          }
+        } catch (qrError) {
+          console.error('❌ Error generating QR code:', qrError);
+        }
+      }
+
+      // Connected successfully
+      if (connection === 'open') {
+        console.log('✅ Connected:', device.device_name);
+
+        try {
+          // Get phone number
+          const phoneNumber = sock.user?.id.split(':')[0];
+          console.log('📞 Phone number:', phoneNumber);
+
+          // Update database
+          const { error } = await supabase
+            .from('devices')
+            .update({
+              status: 'connected',
+              phone_number: phoneNumber,
+              last_connected_at: new Date().toISOString(),
+              qr_code: null
+            })
+            .eq('id', device.id);
+
+          if (error) {
+            console.error('❌ Error updating device status:', error);
+          } else {
+            console.log('✅ Device status updated to connected');
+          }
+
+          // Save session data
+          const sessionData = JSON.stringify(state);
+          await supabase
+            .from('devices')
+            .update({ session_data: sessionData })
+            .eq('id', device.id);
+
+          console.log('💾 Session data saved');
+        } catch (connError) {
+          console.error('❌ Error handling connection:', connError);
+        }
+      }
+
+      // Disconnected
+      if (connection === 'close') {
+        const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+        console.log('🔌 Connection closed. Reconnect:', shouldReconnect);
+        console.log('📊 Disconnect reason:', lastDisconnect?.error?.output?.statusCode);
+
+        activeSockets.delete(device.id);
+
+        try {
+          if (shouldReconnect) {
+            // Update status to error
+            await supabase
+              .from('devices')
+              .update({ status: 'error' })
+              .eq('id', device.id);
+            
+            console.log('⚠️ Device status set to error');
+          } else {
+            // Logged out
+            await supabase
+              .from('devices')
+              .update({ 
+                status: 'disconnected',
+                phone_number: null,
+                qr_code: null
+              })
+              .eq('id', device.id);
+            
+            console.log('👋 Device logged out');
+          }
+        } catch (discError) {
+          console.error('❌ Error handling disconnection:', discError);
+        }
+      }
+    });
+
+    // Save credentials whenever they update
+    sock.ev.on('creds.update', saveCreds);
+
+    // Handle messages (optional - for future message handling)
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+      console.log('💬 Message received:', messages[0]?.key?.remoteJid);
+      // You can save messages to database here
+    });
+
+  } catch (error) {
+    console.error('❌ Error connecting WhatsApp:', error);
+    
+    // Update status to error
+    try {
+      await supabase
+        .from('devices')
+        .update({ status: 'error' })
+        .eq('id', device.id);
+    } catch (updateError) {
+      console.error('❌ Error updating error status:', updateError);
+    }
+    
+    activeSockets.delete(device.id);
+  }
+}
+
+// Start the service
+console.log('🎬 Starting WhatsApp Baileys Service...');
+startService().catch((error) => {
+  console.error('❌ Fatal error:', error);
+  process.exit(1);
+});
+
+// Keep process alive
+process.on('SIGINT', async () => {
+  console.log('🛑 Shutting down...');
+  for (const [deviceId, sock] of activeSockets) {
+    console.log(`🔌 Disconnecting device: ${deviceId}`);
+    sock?.end();
+  }
+  process.exit(0);
+});
+
+// Health check endpoint (optional, for Railway)
+const PORT = process.env.PORT || 3000;
+const http = require('http');
+
+const server = http.createServer((req, res) => {
+  if (req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ 
+      status: 'ok', 
+      activeConnections: activeSockets.size,
+      timestamp: new Date().toISOString()
+    }));
+  } else {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('WhatsApp Baileys Service is running!\n');
+  }
+});
+
+server.listen(PORT, () => {
+  console.log(`🌐 Health check server running on port ${PORT}`);
+});
