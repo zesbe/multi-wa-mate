@@ -173,11 +173,11 @@ export const Sidebar = () => {
 
   return (
     <>
-      {/* Mobile Menu Button */}
+      {/* Mobile Menu Button - Always visible on mobile */}
       <Button
-        variant="outline"
+        variant="ghost"
         size="icon"
-        className="lg:hidden fixed top-4 left-4 z-50"
+        className="lg:hidden fixed top-3 left-3 z-50 bg-background/95 backdrop-blur border shadow-sm"
         onClick={() => setIsOpen(true)}
       >
         <Menu className="w-5 h-5" />
@@ -186,7 +186,7 @@ export const Sidebar = () => {
       {/* Mobile Overlay */}
       {isOpen && (
         <div
-          className="lg:hidden fixed inset-0 bg-background/80 backdrop-blur-sm z-40"
+          className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]"
           onClick={() => setIsOpen(false)}
         />
       )}
@@ -194,7 +194,7 @@ export const Sidebar = () => {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed lg:sticky top-0 left-0 h-screen w-72 z-40 transform transition-transform duration-300",
+          "fixed lg:sticky top-0 left-0 h-screen w-72 z-[70] transform transition-transform duration-300 ease-in-out",
           isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
       >
