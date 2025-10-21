@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Send, Clock, CheckCircle2, XCircle, X, Users, RefreshCw, Copy, Calendar, FileText, Download, Eye, Edit, Trash2, MoreVertical, Loader2, PlayCircle } from "lucide-react";
+import { Plus, Send, Clock, CheckCircle2, XCircle, X, Users, RefreshCw, Copy, Calendar, FileText, Download, Eye, Edit, Trash2, MoreVertical, Loader2, PlayCircle, Upload, Image as ImageIcon } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,6 +36,7 @@ interface Broadcast {
   id: string;
   name: string;
   message: string;
+  media_url?: string | null;
   status: string;
   sent_count: number;
   failed_count: number;
@@ -57,11 +58,14 @@ export const Broadcast = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedBroadcastId, setSelectedBroadcastId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     message: "",
     device_id: "",
     target_contacts: [] as string[],
+    media_url: null as string | null,
+    scheduled_at: null as string | null,
   });
 
   useEffect(() => {
@@ -166,6 +170,8 @@ export const Broadcast = () => {
         device_id: formData.device_id,
         name: formData.name,
         message: formData.message,
+        media_url: formData.media_url,
+        scheduled_at: formData.scheduled_at,
         target_contacts: allTargets,
         status: "draft",
       });
@@ -174,7 +180,7 @@ export const Broadcast = () => {
 
       toast.success("Broadcast berhasil dibuat");
       setDialogOpen(false);
-      setFormData({ name: "", message: "", device_id: "", target_contacts: [] });
+      setFormData({ name: "", message: "", device_id: "", target_contacts: [], media_url: null, scheduled_at: null });
       setManualNumbers([]);
       setSelectedContacts([]);
       setCurrentNumber("");
@@ -211,6 +217,49 @@ export const Broadcast = () => {
       c.name?.toLowerCase().includes(contactSearch.toLowerCase()) ||
       c.phone_number.includes(contactSearch)
   );
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check file size (max 50MB)
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error("File terlalu besar", {
+        description: "Maksimal ukuran file adalah 50MB"
+      });
+      return;
+    }
+
+    setUploadingFile(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+      
+      const { error: uploadError, data } = await supabase.storage
+        .from('broadcast-media')
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('broadcast-media')
+        .getPublicUrl(fileName);
+
+      setFormData({ ...formData, media_url: publicUrl });
+      toast.success("File berhasil diupload");
+    } catch (error: any) {
+      toast.error("Gagal upload file: " + error.message);
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
+  const handleRemoveFile = () => {
+    setFormData({ ...formData, media_url: null });
+  };
 
   const handleSendNow = async (broadcastId: string) => {
     setSendingId(broadcastId);
@@ -482,6 +531,71 @@ export const Broadcast = () => {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="message">Pesan</Label>
+                  <Textarea
+                    id="message"
+                    value={formData.message}
+                    onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                    placeholder="Tulis pesan broadcast..."
+                    rows={4}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="file">File Media (Opsional)</Label>
+                  {formData.media_url ? (
+                    <div className="flex items-center gap-2 p-3 border rounded-md">
+                      <ImageIcon className="w-4 h-4 text-primary" />
+                      <span className="text-sm flex-1 truncate">File terlampir</span>
+                      <Button type="button" variant="ghost" size="sm" onClick={handleRemoveFile}>
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="file"
+                        type="file"
+                        accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
+                        onChange={handleFileUpload}
+                        disabled={uploadingFile}
+                        className="hidden"
+                      />
+                      <Label htmlFor="file" className="flex-1">
+                        <div className="flex items-center justify-center gap-2 p-3 border-2 border-dashed rounded-md cursor-pointer hover:bg-accent transition-colors">
+                          {uploadingFile ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Upload className="w-4 h-4" />
+                          )}
+                          <span className="text-sm">
+                            {uploadingFile ? "Mengupload..." : "Pilih file"}
+                          </span>
+                        </div>
+                      </Label>
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Mendukung gambar, video, audio, PDF, dokumen (Max 50MB)
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="scheduled">Jadwalkan Pengiriman (Opsional)</Label>
+                  <Input
+                    id="scheduled"
+                    type="datetime-local"
+                    value={formData.scheduled_at || ""}
+                    onChange={(e) => setFormData({ ...formData, scheduled_at: e.target.value || null })}
+                    min={new Date().toISOString().slice(0, 16)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Kosongkan untuk kirim langsung, atau atur waktu untuk kirim otomatis
+                  </p>
+                </div>
+
+                <div className="space-y-2">
                   <Label>Penerima</Label>
                   <Tabs defaultValue="manual" className="w-full">
                     <TabsList className="grid w-full grid-cols-2">
@@ -595,19 +709,38 @@ export const Broadcast = () => {
             const StatusIcon = getStatusIcon(broadcast.status);
             return (
               <Card key={broadcast.id}>
-                <CardHeader>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <CardTitle className="truncate">{broadcast.name}</CardTitle>
-                      <CardDescription className="mt-2 line-clamp-2">
-                        {broadcast.message}
-                      </CardDescription>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className={getStatusColor(broadcast.status)} variant="secondary">
-                        <StatusIcon className="w-3 h-3 mr-1" />
-                        {broadcast.status}
-                      </Badge>
+                 <CardHeader>
+                   <div className="flex items-start justify-between gap-3">
+                     <div className="flex-1 min-w-0">
+                       <CardTitle className="truncate">{broadcast.name}</CardTitle>
+                       <CardDescription className="mt-2 line-clamp-2">
+                         {broadcast.message}
+                       </CardDescription>
+                       <div className="flex flex-wrap gap-2 mt-2">
+                         {broadcast.media_url && (
+                           <Badge variant="outline" className="text-xs">
+                             <ImageIcon className="w-3 h-3 mr-1" />
+                             Media terlampir
+                           </Badge>
+                         )}
+                         {broadcast.scheduled_at && broadcast.status === 'draft' && (
+                           <Badge variant="outline" className="text-xs">
+                             <Clock className="w-3 h-3 mr-1" />
+                             {new Date(broadcast.scheduled_at).toLocaleString('id-ID', {
+                               day: '2-digit',
+                               month: 'short',
+                               hour: '2-digit',
+                               minute: '2-digit'
+                             })}
+                           </Badge>
+                         )}
+                       </div>
+                     </div>
+                     <div className="flex items-center gap-2">
+                       <Badge className={getStatusColor(broadcast.status)} variant="secondary">
+                         <StatusIcon className="w-3 h-3 mr-1" />
+                         {broadcast.status}
+                       </Badge>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button 

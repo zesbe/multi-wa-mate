@@ -136,6 +136,10 @@ async function startService() {
   setInterval(checkDevices, 5000);
   console.log('⏱️ Polling started (every 5 seconds)');
 
+  // Check scheduled broadcasts every 10 seconds
+  setInterval(checkScheduledBroadcasts, 10000);
+  console.log('⏰ Scheduled broadcast check started (every 10 seconds)');
+
   // Process broadcasts every 3 seconds
   setInterval(processBroadcasts, 3000);
   console.log('📤 Broadcast processing started (every 3 seconds)');
@@ -395,6 +399,41 @@ async function healthCheckPing() {
   }
 }
 
+// Check and trigger scheduled broadcasts
+async function checkScheduledBroadcasts() {
+  try {
+    const now = new Date().toISOString();
+    
+    // Get broadcasts that are scheduled and ready to send
+    const { data: scheduledBroadcasts, error } = await supabase
+      .from('broadcasts')
+      .select('*')
+      .eq('status', 'draft')
+      .lte('scheduled_at', now)
+      .not('scheduled_at', 'is', null);
+
+    if (error) {
+      console.error('❌ Error fetching scheduled broadcasts:', error);
+      return;
+    }
+
+    if (scheduledBroadcasts && scheduledBroadcasts.length > 0) {
+      console.log(`⏰ Found ${scheduledBroadcasts.length} scheduled broadcast(s) ready to send`);
+      
+      for (const broadcast of scheduledBroadcasts) {
+        await supabase
+          .from('broadcasts')
+          .update({ status: 'processing' })
+          .eq('id', broadcast.id);
+        
+        console.log(`📤 Triggered scheduled broadcast: ${broadcast.name}`);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error in checkScheduledBroadcasts:', error);
+  }
+}
+
 // Process broadcasts
 async function processBroadcasts() {
   try {
@@ -462,10 +501,53 @@ async function processBroadcasts() {
             // Format phone number (ensure it has @s.whatsapp.net suffix)
             const jid = phoneNumber.includes('@') ? phoneNumber : `${phoneNumber}@s.whatsapp.net`;
             
+            // Prepare message content
+            let messageContent;
+            
+            if (broadcast.media_url) {
+              // Send media message
+              try {
+                const mediaType = getMediaType(broadcast.media_url);
+                const response = await fetch(broadcast.media_url);
+                const buffer = await response.arrayBuffer();
+                
+                if (mediaType === 'image') {
+                  messageContent = {
+                    image: Buffer.from(buffer),
+                    caption: broadcast.message || ''
+                  };
+                } else if (mediaType === 'video') {
+                  messageContent = {
+                    video: Buffer.from(buffer),
+                    caption: broadcast.message || ''
+                  };
+                } else if (mediaType === 'audio') {
+                  messageContent = {
+                    audio: Buffer.from(buffer),
+                    mimetype: 'audio/mp4'
+                  };
+                } else if (mediaType === 'document') {
+                  messageContent = {
+                    document: Buffer.from(buffer),
+                    caption: broadcast.message || '',
+                    mimetype: 'application/pdf'
+                  };
+                } else {
+                  // Fallback to text message
+                  messageContent = { text: broadcast.message };
+                }
+              } catch (mediaError) {
+                console.error('❌ Error loading media:', mediaError);
+                // Fallback to text only
+                messageContent = { text: broadcast.message };
+              }
+            } else {
+              // Text only message
+              messageContent = { text: broadcast.message };
+            }
+            
             // Send message
-            await sock.sendMessage(jid, { 
-              text: broadcast.message 
-            });
+            await sock.sendMessage(jid, messageContent);
             
             sentCount++;
             console.log(`✅ Sent to ${phoneNumber}`);
@@ -508,4 +590,21 @@ async function processBroadcasts() {
   } catch (error) {
     console.error('❌ Error in processBroadcasts:', error);
   }
+}
+
+// Helper function to determine media type from URL
+function getMediaType(url) {
+  const ext = url.toLowerCase().split('.').pop().split('?')[0];
+  
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+    return 'image';
+  } else if (['mp4', 'mov', 'avi'].includes(ext)) {
+    return 'video';
+  } else if (['mp3', 'wav', 'ogg', 'm4a'].includes(ext)) {
+    return 'audio';
+  } else if (['pdf', 'doc', 'docx'].includes(ext)) {
+    return 'document';
+  }
+  
+  return 'document';
 }
