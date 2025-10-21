@@ -201,13 +201,19 @@ export const Devices = () => {
       setPollingInterval(interval);
 
       // Auto-stop polling after 5 minutes
-      setTimeout(() => {
+      setTimeout(async () => {
         if (interval) {
           clearInterval(interval);
           setPollingInterval(null);
           if (connectionStatus !== "connected") {
             setConnectionStatus("qr_expired");
             toast.error("QR Code expired. Silakan coba lagi.");
+            if (selectedDevice) {
+              await supabase
+                .from("devices")
+                .update({ status: "disconnected", qr_code: null })
+                .eq("id", selectedDevice.id);
+            }
           }
         }
       }, 300000);
@@ -230,6 +236,24 @@ export const Devices = () => {
     }
   };
 
+  const handleCancelConnect = async () => {
+    if (!selectedDevice) return;
+    try {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+        setPollingInterval(null);
+      }
+      await supabase
+        .from("devices")
+        .update({ status: "disconnected", qr_code: null })
+        .eq("id", selectedDevice.id);
+    } catch (e) {
+      console.error("Cancel connect error:", e);
+    } finally {
+      setConnectionStatus("idle");
+      setQrDialogOpen(false);
+    }
+  };
   const handleClearSession = async (device: Device) => {
     if (!confirm("Yakin ingin menghapus session data? Device akan disconnect.")) return;
 
@@ -534,9 +558,13 @@ export const Devices = () => {
         )}
 
         {/* QR Code Dialog */}
-        <Dialog open={qrDialogOpen} onOpenChange={(open) => {
+        <Dialog open={qrDialogOpen} onOpenChange={async (open) => {
           setQrDialogOpen(open);
           if (!open) {
+            if (connectionStatus !== "connected") {
+              await handleCancelConnect();
+              return; // handleCancelConnect will close and reset
+            }
             setConnectionStatus("idle");
             if (pollingInterval) {
               clearInterval(pollingInterval);
@@ -658,6 +686,18 @@ export const Devices = () => {
                     <RefreshCw className="w-4 h-4 mr-2" />
                     Coba Lagi
                   </Button>
+                </div>
+              )}
+
+              {connectionStatus !== "connected" && (
+                <div className="flex items-center justify-center gap-3 pt-2">
+                  <Button variant="outline" onClick={handleCancelConnect}>Batal</Button>
+                  {(connectionStatus === "qr_ready" || connectionStatus === "qr_expired" || connectionStatus === "error") && (
+                    <Button onClick={handleRefreshQR}>
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Refresh QR
+                    </Button>
+                  )}
                 </div>
               )}
             </div>

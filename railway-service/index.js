@@ -74,6 +74,19 @@ async function startService() {
           console.log(`❌ Disconnecting device: ${deviceId}`);
           sock?.end();
           activeSockets.delete(deviceId);
+          // Clean auth on explicit disconnect
+          try {
+            const fs = require('fs');
+            const authPath = `./auth_info_${deviceId}`;
+            if (fs.existsSync(authPath)) {
+              fs.rmSync(authPath, { recursive: true, force: true });
+            }
+            if (device) {
+              await supabase.from('devices').update({ qr_code: null }).eq('id', deviceId);
+            }
+          } catch (e) {
+            console.error('❌ Error cleaning auth on disconnect:', e);
+          }
         }
       }
 
