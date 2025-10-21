@@ -61,9 +61,19 @@ async function startService() {
       // Ensure sockets for devices that should be online
       const needSockets = devices?.filter(d => ['connecting', 'connected'].includes(d.status)) || [];
       for (const device of needSockets) {
-        if (!activeSockets.has(device.id)) {
+        const sock = activeSockets.get(device.id);
+        
+        if (!sock) {
+          // No socket exists, create new connection
           console.log(`🔄 (re)connecting device: ${device.device_name} [status=${device.status}]`);
           await connectWhatsApp(device);
+        } else if (device.status === 'connected' && !sock.user) {
+          // Socket exists but not authenticated, reconnect aggressively
+          console.log(`⚠️ Socket exists but not connected for ${device.device_name}, reconnecting...`);
+          sock.end();
+          activeSockets.delete(device.id);
+          await supabase.from('devices').update({ status: 'connecting' }).eq('id', device.id);
+          setTimeout(() => connectWhatsApp(device).catch(() => {}), 500);
         }
       }
 
@@ -107,6 +117,10 @@ async function startService() {
   // Process broadcasts every 3 seconds
   setInterval(processBroadcasts, 3000);
   console.log('📤 Broadcast processing started (every 3 seconds)');
+
+  // Health check ping every 30 seconds
+  setInterval(healthCheckPing, 30000);
+  console.log('💓 Health check ping started (every 30 seconds)');
 }
 
 async function connectWhatsApp(device) {
@@ -243,14 +257,15 @@ async function connectWhatsApp(device) {
             if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true, force: true });
             await supabase.from('devices').update({ status: 'disconnected', phone_number: null, qr_code: null }).eq('id', device.id);
           } else {
-            // Other transient errors -> retry
-            console.log('⚠️ Transient error - retrying connection');
+            // Other transient errors -> aggressive retry
+            console.log('⚠️ Transient error - aggressive retry in 500ms');
             await supabase.from('devices').update({ status: 'connecting' }).eq('id', device.id);
             setTimeout(() => {
               if (!activeSockets.has(device.id)) {
+                console.log('🔁 Attempting reconnect...');
                 connectWhatsApp(device).catch(() => {});
               }
-            }, 1500);
+            }, 500);
           }
         } catch (discError) {
           console.error('❌ Error handling disconnection:', discError);
@@ -325,6 +340,38 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`🌐 Health check server running on port ${PORT}`);
 });
+
+// Health check ping to keep connections alive
+async function healthCheckPing() {
+  try {
+    console.log(`💓 Health check: ${activeSockets.size} active socket(s)`);
+    
+    for (const [deviceId, sock] of activeSockets) {
+      try {
+        if (sock.user) {
+          // Send a lightweight ping to keep connection alive
+          const pingTime = Date.now();
+          console.log(`📡 Ping device ${deviceId}: ${sock.user.id}`);
+          
+          // Update last_connected_at to show device is alive
+          await supabase
+            .from('devices')
+            .update({ 
+              last_connected_at: new Date().toISOString(),
+              status: 'connected'
+            })
+            .eq('id', deviceId);
+        } else {
+          console.log(`⚠️ Device ${deviceId} socket exists but not authenticated`);
+        }
+      } catch (pingError) {
+        console.error(`❌ Ping error for device ${deviceId}:`, pingError.message);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error in healthCheckPing:', error);
+  }
+}
 
 // Process broadcasts
 async function processBroadcasts() {

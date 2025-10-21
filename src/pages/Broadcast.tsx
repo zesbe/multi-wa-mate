@@ -74,6 +74,51 @@ export const Broadcast = () => {
       setDialogOpen(true);
       sessionStorage.removeItem("quick-message");
     }
+
+    // Subscribe to real-time broadcast updates
+    const channel = supabase
+      .channel('broadcasts-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'broadcasts'
+        },
+        (payload) => {
+          console.log('Broadcast update:', payload);
+          fetchData();
+          
+          const oldStatus = payload.old?.status;
+          const newStatus = payload.new?.status;
+          const broadcastName = payload.new?.name;
+          
+          if (oldStatus !== newStatus && broadcastName) {
+            if (newStatus === 'processing' && oldStatus === 'draft') {
+              toast.info(`📤 ${broadcastName}`, {
+                description: 'Broadcast dimulai, pesan sedang dikirim...'
+              });
+            } else if (newStatus === 'completed') {
+              toast.success(`✅ ${broadcastName} Selesai!`, {
+                description: `Terkirim: ${payload.new?.sent_count || 0}, Gagal: ${payload.new?.failed_count || 0}`
+              });
+            } else if (newStatus === 'failed') {
+              toast.error(`❌ ${broadcastName} Gagal`, {
+                description: 'Coba kirim ulang atau periksa koneksi device'
+              });
+            } else if (newStatus === 'cancelled') {
+              toast.warning(`⚠️ ${broadcastName} Dibatalkan`, {
+                description: 'Pengiriman broadcast telah dibatalkan'
+              });
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchData = async () => {

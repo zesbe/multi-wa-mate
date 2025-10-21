@@ -78,10 +78,23 @@ export const Devices = () => {
             if (oldStatus !== newStatus && deviceName) {
               if (newStatus === 'connected') {
                 notifyDeviceConnected(deviceName);
+                toast.success(`${deviceName} Terhubung! ✅`, {
+                  description: 'Device berhasil connect ke WhatsApp'
+                });
+              } else if (newStatus === 'connecting' && oldStatus === 'connected') {
+                toast.info(`${deviceName} Reconnecting... 🔄`, {
+                  description: 'Device sedang mencoba reconnect otomatis'
+                });
               } else if (newStatus === 'disconnected' && oldStatus === 'connected') {
                 notifyDeviceDisconnected(deviceName);
+                toast.warning(`${deviceName} Terputus ⚠️`, {
+                  description: 'Koneksi WhatsApp terputus'
+                });
               } else if (newStatus === 'error') {
                 notifyDeviceError(deviceName);
+                toast.error(`${deviceName} Error ❌`, {
+                  description: 'Terjadi kesalahan pada device'
+                });
               }
             }
           }
