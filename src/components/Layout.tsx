@@ -11,7 +11,7 @@ export const Layout = ({ children }: LayoutProps) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-transparent">
       {/* Sidebar - works on both mobile and desktop */}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       
