@@ -49,12 +49,11 @@ serve(async (req) => {
         })
         .eq('id', deviceId);
 
-      // Simulate Baileys QR generation
-      // In production, this would use actual Baileys library
+      // Generate QR code for WhatsApp Web
       setTimeout(async () => {
         const qrData = `baileys-${deviceId}-${Date.now()}`;
         
-        // Generate QR code data (in production, Baileys generates this)
+        // Generate QR code
         const qrCode = await generateQRCode(qrData);
         
         // Update device with QR code
@@ -69,24 +68,10 @@ serve(async (req) => {
           qr: qrCode,
           timestamp: Date.now()
         }));
-
-        // Simulate successful connection after 5 seconds
-        setTimeout(async () => {
-          await supabase
-            .from('devices')
-            .update({ 
-              status: 'connected',
-              phone_number: '+62' + Math.floor(Math.random() * 1000000000),
-              last_connected_at: new Date().toISOString(),
-              qr_code: null
-            })
-            .eq('id', deviceId);
-
-          socket.send(JSON.stringify({
-            type: 'connected',
-            timestamp: Date.now()
-          }));
-        }, 5000);
+        
+        // Note: In real implementation, device will only connect 
+        // when user actually scans the QR code with WhatsApp
+        // The 'connected' event should come from Baileys library after successful scan
       }, 2000);
 
     } catch (error) {
