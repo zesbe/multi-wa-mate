@@ -23,6 +23,7 @@ interface DeviceCardProps {
   onLogout: (device: Device) => void;
   onDelete: (id: string) => void;
   onCopyApiKey: (apiKey: string) => void;
+  onStopConnecting: (device: Device) => void;
   getStatusColor: (status: string) => string;
   getStatusText: (status: string) => string;
 }
@@ -36,6 +37,7 @@ export function DeviceCard({
   onLogout,
   onDelete,
   onCopyApiKey,
+  onStopConnecting,
   getStatusColor,
   getStatusText,
 }: DeviceCardProps) {
@@ -121,6 +123,26 @@ export function DeviceCard({
                 >
                   <LogOut className="w-3 h-3 mr-1" />
                   Logout
+                </Button>
+              </>
+            )}
+            {device.status === "connecting" && (
+              <>
+                <Button
+                  size="sm"
+                  onClick={() => onConnect(device)}
+                  className="bg-blue-500 hover:bg-blue-600 text-white text-xs"
+                >
+                  <QrCode className="w-3 h-3 mr-1" />
+                  Scan Ulang
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onStopConnecting(device)}
+                  className="text-xs border-red-500 text-red-500"
+                >
+                  Batal
                 </Button>
               </>
             )}

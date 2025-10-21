@@ -319,13 +319,26 @@ export const Devices = () => {
       }
       await supabase
         .from("devices")
-        .update({ status: "disconnected", qr_code: null })
+        .update({ status: "disconnected", qr_code: null, pairing_code: null, connection_method: null, phone_for_pairing: null })
         .eq("id", selectedDevice.id);
     } catch (e) {
       console.error("Cancel connect error:", e);
     } finally {
       setConnectionStatus("idle");
       setQrDialogOpen(false);
+    }
+  };
+
+  const handleStopConnecting = async (device: Device) => {
+    try {
+      await supabase
+        .from("devices")
+        .update({ status: "disconnected", qr_code: null, pairing_code: null, connection_method: null, phone_for_pairing: null })
+        .eq("id", device.id);
+      toast.success("Dibatalkan. Anda bisa scan ulang.");
+      fetchDevices();
+    } catch (e: any) {
+      toast.error(e.message);
     }
   };
   const handleClearSession = async (device: Device) => {
@@ -337,6 +350,7 @@ export const Devices = () => {
         .update({ 
           session_data: null,
           qr_code: null,
+          pairing_code: null,
           status: "disconnected"
         })
         .eq("id", device.id);
@@ -537,6 +551,7 @@ export const Devices = () => {
                   onLogout={handleLogout}
                   onDelete={handleDeleteDevice}
                   onCopyApiKey={copyToClipboard}
+                  onStopConnecting={handleStopConnecting}
                   getStatusColor={getStatusColor}
                   getStatusText={getStatusText}
                 />
@@ -611,6 +626,28 @@ export const Devices = () => {
                                 <QrCode className="w-3 h-3 mr-1" />
                                 Scan QR
                               </Button>
+                            )}
+                            {device.status === "connecting" && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleConnectDevice(device)}
+                                  className="bg-blue-500 hover:bg-blue-600 text-white text-xs h-8"
+                                  title="Scan ulang/lihat kode"
+                                >
+                                  <QrCode className="w-3 h-3 mr-1" />
+                                  Scan Ulang
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleStopConnecting(device)}
+                                  className="border-red-500 text-red-500 h-8"
+                                  title="Batalkan & putuskan"
+                                >
+                                  Batal
+                                </Button>
+                              </>
                             )}
                             <Button
                               size="sm"
@@ -1038,6 +1075,27 @@ export const Devices = () => {
                         <QrCode className="w-4 h-4 mr-2" />
                         Scan QR Code
                       </Button>
+                    )}
+                    {selectedDevice.status === "connecting" && (
+                      <>
+                        <Button
+                          onClick={() => {
+                            setDetailDialogOpen(false);
+                            handleConnectDevice(selectedDevice);
+                          }}
+                          className="bg-blue-500 hover:bg-blue-600"
+                        >
+                          <QrCode className="w-4 h-4 mr-2" />
+                          Scan Ulang
+                        </Button>
+                        <Button
+                          onClick={() => handleStopConnecting(selectedDevice)}
+                          variant="outline"
+                          className="border-red-500 text-red-500 hover:bg-red-50"
+                        >
+                          Batal
+                        </Button>
+                      </>
                     )}
                     {selectedDevice.status === "connected" && (
                       <>
