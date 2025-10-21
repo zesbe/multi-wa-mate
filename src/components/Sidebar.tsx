@@ -186,7 +186,7 @@ export const Sidebar = ({ isOpen = false, onClose }: SidebarProps = {}) => {
       {/* Mobile Overlay */}
       {open && (
         <div
-          className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]"
+          className="lg:hidden fixed inset-0 bg-background z-[60]"
           onClick={handleClose}
         />
       )}
