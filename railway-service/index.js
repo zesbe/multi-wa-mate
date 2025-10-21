@@ -63,6 +63,28 @@ async function startService() {
       for (const device of needSockets) {
         const sock = activeSockets.get(device.id);
         
+        // Check if device stuck in connecting for too long (>2 minutes)
+        if (device.status === 'connecting' && device.updated_at) {
+          const lastUpdate = new Date(device.updated_at).getTime();
+          const now = Date.now();
+          const stuckTime = (now - lastUpdate) / 1000; // seconds
+          
+          if (stuckTime > 120) {
+            console.log(`⚠️ Device ${device.device_name} stuck in connecting for ${stuckTime}s - clearing session`);
+            const fs = require('fs');
+            const authPath = `./auth_info_${device.id}`;
+            if (fs.existsSync(authPath)) {
+              fs.rmSync(authPath, { recursive: true, force: true });
+            }
+            await supabase.from('devices').update({ 
+              status: 'disconnected',
+              qr_code: null,
+              session_data: null
+            }).eq('id', device.id);
+            continue;
+          }
+        }
+        
         if (!sock) {
           // No socket exists, create new connection
           console.log(`🔄 (re)connecting device: ${device.device_name} [status=${device.status}]`);
