@@ -271,7 +271,7 @@ async function connectWhatsApp(device, isRecovery = false) {
             deviceData?.connection_method === 'pairing' &&
             deviceData?.phone_for_pairing &&
             !pairingCodeRequested &&
-            (connection === 'connecting' || qr) // don't wait strictly for QR, either state works
+            qr // wait for QR event to ensure handshake is ready before requesting code
           ) {
             pairingCodeRequested = true;
             const rawPhone = String(deviceData.phone_for_pairing).replace(/\D/g, '');
