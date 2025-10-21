@@ -256,13 +256,14 @@ async function connectWhatsApp(device) {
         try {
           const { data: deviceData } = await supabase
             .from('devices')
-            .select('connection_method, phone_for_pairing')
+            .select('status, connection_method, phone_for_pairing')
             .eq('id', device.id)
             .single();
 
           // Pairing code flow: trigger as soon as we're connecting (no need to wait for QR)
           if (
             connection === 'connecting' &&
+            deviceData?.status === 'connecting' &&
             deviceData?.connection_method === 'pairing' &&
             deviceData?.phone_for_pairing
           ) {
@@ -277,14 +278,18 @@ async function connectWhatsApp(device) {
 
           // QR method or fallback to QR when pairing not configured
           if (qr) {
-            if (deviceData?.connection_method === 'pairing' && deviceData?.phone_for_pairing) {
+            if (
+              deviceData?.status === 'connecting' &&
+              deviceData?.connection_method === 'pairing' &&
+              deviceData?.phone_for_pairing
+            ) {
               if (!pairingCodeRequested) {
                 const phone = String(deviceData.phone_for_pairing).replace(/\D/g, '');
                 console.log('📱 Requesting pairing code (qr event) for:', phone);
                 await new Promise((r) => setTimeout(r, 1200));
                 requestPairCodeWithRetry(phone, 1);
               }
-            } else {
+            } else if (deviceData?.status === 'connecting') {
               console.log('📷 QR Code generated for', device.device_name);
               const qrDataUrl = await QRCode.toDataURL(qr);
               await supabase
@@ -346,6 +351,18 @@ async function connectWhatsApp(device) {
         activeSockets.delete(device.id);
 
         try {
+          // Respect user-initiated cancel: do nothing if already disconnected
+          const { data: current } = await supabase
+            .from('devices')
+            .select('status')
+            .eq('id', device.id)
+            .single();
+
+          if (current?.status === 'disconnected') {
+            console.log('🧘 User set status to disconnected — skipping auto-reconnect');
+            return;
+          }
+
           if (restartRequired) {
             // keep auth, set to connecting and re-connect
             console.log('♻️ Restart required - reconnecting');
