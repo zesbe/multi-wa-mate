@@ -225,6 +225,32 @@ async function connectWhatsApp(device) {
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
 
+      // Helper to request pairing code with retries/backoff
+      const requestPairCodeWithRetry = async (phone, attempt = 1) => {
+        const maxAttempts = 5;
+        try {
+          const code = await sock.requestPairingCode(phone);
+          console.log('✅ Pairing code generated:', code);
+          await supabase
+            .from('devices')
+            .update({ pairing_code: code, status: 'connecting', qr_code: null })
+            .eq('id', device.id);
+          console.log('✅ Pairing code saved to database');
+          pairingCodeRequested = true;
+        } catch (err) {
+          const status = err?.output?.statusCode || err?.status || err?.data?.status;
+          const msg = String(err?.message || '');
+          console.error(`❌ Pairing code attempt ${attempt} failed:`, status, msg);
+          if (attempt < maxAttempts && (status === 428 || /precondition|connection closed/i.test(msg))) {
+            const delay = 750 * attempt; // backoff
+            console.log(`⏳ Retry pairing in ${delay}ms (attempt ${attempt + 1}/${maxAttempts})`);
+            setTimeout(() => requestPairCodeWithRetry(phone, attempt + 1), delay);
+          } else {
+            await supabase.from('devices').update({ status: 'error', pairing_code: null }).eq('id', device.id);
+          }
+        }
+      };
+
       // Handle pairing/QR only when QR event is present to satisfy WA preconditions
       if (qr && !sock.authState.creds.registered) {
         try {
@@ -236,59 +262,17 @@ async function connectWhatsApp(device) {
 
           if (deviceData?.connection_method === 'pairing' && deviceData?.phone_for_pairing) {
             if (pairingCodeRequested) return; // avoid duplicate requests
-            pairingCodeRequested = true;
-            console.log('📱 Requesting pairing code for:', deviceData.phone_for_pairing);
-            try {
-              const pairingCode = await sock.requestPairingCode(deviceData.phone_for_pairing);
-              console.log('✅ Pairing code generated:', pairingCode);
-
-              await supabase
-                .from('devices')
-                .update({ 
-                  pairing_code: pairingCode,
-                  status: 'connecting',
-                  qr_code: null // Clear QR code when using pairing
-                })
-                .eq('id', device.id);
-
-              console.log('✅ Pairing code saved to database');
-            } catch (pairErr) {
-              const status = pairErr?.output?.statusCode || pairErr?.status || pairErr?.data?.status;
-              console.error('❌ Error requesting pairing code:', pairErr);
-              if (status === 428 || /Precondition/i.test(String(pairErr?.message || ''))) {
-                console.log('⏳ Precondition not ready, retrying pairing code in 1s...');
-                pairingCodeRequested = false;
-                setTimeout(async () => {
-                  if (!sock.authState.creds.registered && !pairingCodeRequested) {
-                    try {
-                      pairingCodeRequested = true;
-                      const retryCode = await sock.requestPairingCode(deviceData.phone_for_pairing);
-                      console.log('✅ Pairing code (retry) generated:', retryCode);
-                      await supabase.from('devices').update({ pairing_code: retryCode, status: 'connecting', qr_code: null }).eq('id', device.id);
-                    } catch (retryErr) {
-                      console.error('❌ Pairing retry failed:', retryErr);
-                      await supabase.from('devices').update({ status: 'error', pairing_code: null }).eq('id', device.id);
-                    }
-                  }
-                }, 1000);
-              } else {
-                await supabase.from('devices').update({ status: 'error', pairing_code: null }).eq('id', device.id);
-              }
-            }
+            const phone = String(deviceData.phone_for_pairing).replace(/\D/g, '');
+            console.log('📱 Requesting pairing code for:', phone);
+            requestPairCodeWithRetry(phone, 1);
           } else {
             // QR method
             console.log('📷 QR Code generated for', device.device_name);
             const qrDataUrl = await QRCode.toDataURL(qr);
-
             await supabase
               .from('devices')
-              .update({ 
-                qr_code: qrDataUrl,
-                status: 'connecting',
-                pairing_code: null // Clear pairing code when using QR
-              })
+              .update({ qr_code: qrDataUrl, status: 'connecting', pairing_code: null })
               .eq('id', device.id);
-
             console.log('✅ QR saved to database');
           }
         } catch (qrError) {
