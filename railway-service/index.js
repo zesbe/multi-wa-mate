@@ -95,8 +95,17 @@ async function connectWhatsApp(device) {
   console.log(`📱 Connecting device: ${device.device_name} (${device.id})`);
 
   try {
-    // Use multi-file auth state stored in memory
+    // Clear old auth folder first to avoid corrupt sessions
     const authPath = `./auth_info_${device.id}`;
+    const fs = require('fs');
+    const path = require('path');
+    
+    // Remove old auth folder if exists
+    if (fs.existsSync(authPath)) {
+      console.log(`🗑️ Removing old auth folder: ${authPath}`);
+      fs.rmSync(authPath, { recursive: true, force: true });
+    }
+    
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
 
     // Use latest WhatsApp Web version to avoid handshake issues
@@ -186,22 +195,44 @@ async function connectWhatsApp(device) {
 
       // Disconnected
       if (connection === 'close') {
-        const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-        console.log('🔌 Connection closed. Reconnect:', shouldReconnect);
-        console.log('📊 Disconnect statusCode:', lastDisconnect?.error?.output?.statusCode);
-        console.log('🧾 Disconnect error detail:', lastDisconnect?.error);
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+        
+        console.log('🔌 Connection closed');
+        console.log('📊 Disconnect statusCode:', statusCode);
+        console.log('🧾 Error message:', lastDisconnect?.error?.message);
 
         activeSockets.delete(device.id);
+        
+        // Remove auth folder on disconnect to ensure clean state
+        const authPath = `./auth_info_${device.id}`;
+        const fs = require('fs');
+        if (fs.existsSync(authPath)) {
+          console.log(`🗑️ Cleaning auth folder on disconnect`);
+          fs.rmSync(authPath, { recursive: true, force: true });
+        }
 
         try {
-          if (shouldReconnect) {
-            // Update status to error
+          if (shouldReconnect && statusCode !== 405) {
+            // Only retry if not 405 error
+            console.log('⚠️ Will retry connection');
             await supabase
               .from('devices')
-              .update({ status: 'error' })
+              .update({ 
+                status: 'disconnected',
+                qr_code: null 
+              })
               .eq('id', device.id);
-            
-            console.log('⚠️ Device status set to error');
+          } else if (statusCode === 405) {
+            // 405 error - auth issue, set to error
+            console.log('❌ Error 405 detected - Authentication failed');
+            await supabase
+              .from('devices')
+              .update({ 
+                status: 'error',
+                qr_code: null 
+              })
+              .eq('id', device.id);
           } else {
             // Logged out
             await supabase
