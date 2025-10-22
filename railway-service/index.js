@@ -273,7 +273,8 @@ async function connectWhatsApp(device, isRecovery = false) {
             deviceData?.connection_method === 'pairing' &&
             deviceData?.phone_for_pairing
           ) {
-            const handled = await handlePairingCode(sock, device, supabase, qr, pairingCodeRequested);
+            const readyToRequest = connection === 'connecting' || !!qr;
+            const handled = await handlePairingCode(sock, device, supabase, readyToRequest, pairingCodeRequested);
             if (handled) {
               pairingCodeRequested = true;
             }

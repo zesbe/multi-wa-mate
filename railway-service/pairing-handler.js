@@ -4,11 +4,11 @@
  * @param {Object} sock - WhatsApp socket instance
  * @param {Object} device - Device data from database
  * @param {Object} supabase - Supabase client
- * @param {boolean} qr - QR event indicator (needed to ensure handshake is ready)
+ * @param {boolean} readyToRequest - True when connection is 'connecting' or QR event emitted
  * @param {boolean} pairingCodeRequested - Flag to prevent duplicate requests
  * @returns {Promise<boolean>} - Returns true if pairing code was handled successfully
  */
-async function handlePairingCode(sock, device, supabase, qr, pairingCodeRequested) {
+async function handlePairingCode(sock, device, supabase, readyToRequest, pairingCodeRequested) {
   try {
     // Only generate pairing code if not already registered
     if (sock.authState.creds.registered) {
@@ -37,7 +37,7 @@ async function handlePairingCode(sock, device, supabase, qr, pairingCodeRequeste
     if (
       deviceData?.connection_method !== 'pairing' ||
       !deviceData?.phone_for_pairing ||
-      !qr // Wait for QR event to ensure handshake is ready
+      !readyToRequest // Wait until connecting or QR event to ensure handshake is ready
     ) {
       return false;
     }
