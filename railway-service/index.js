@@ -6,9 +6,11 @@ if (!global.crypto) {
 
 const { default: makeWASocket, DisconnectReason, fetchLatestBaileysVersion, Browsers, initAuthCreds, BufferJSON } = require('@whiskeysockets/baileys');
 const { createClient } = require('@supabase/supabase-js');
-const qrcode = require('qrcode-terminal');
-const QRCode = require('qrcode');
 const os = require('os');
+
+// Import handlers for QR and Pairing code
+const { handleQRCode } = require('./qr-handler');
+const { handlePairingCode } = require('./pairing-handler');
 
 // Supabase config dari environment variables
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -269,119 +271,19 @@ async function connectWhatsApp(device, isRecovery = false) {
           // Pairing code method - prioritize this over QR
           if (
             deviceData?.connection_method === 'pairing' &&
-            deviceData?.phone_for_pairing &&
-            !pairingCodeRequested &&
-            qr // wait for QR event to ensure handshake is ready before requesting code
+            deviceData?.phone_for_pairing
           ) {
-            pairingCodeRequested = true;
-            const rawPhone = String(deviceData.phone_for_pairing).replace(/\D/g, '');
-            
-            // Validate phone number format
-            if (!rawPhone || rawPhone.length < 10) {
-              console.error('❌ Invalid phone number format:', deviceData.phone_for_pairing);
-              await supabase.from('devices').update({ 
-                status: 'error',
-                pairing_code: 'Invalid phone number' 
-              }).eq('id', device.id);
-              return;
-            }
-
-            console.log('📱 Requesting pairing code for:', rawPhone);
-            
-            // Schedule a one-time refresh if still not linked after ~45s
-            let refreshScheduled = false;
-            const scheduleRefresh = () => {
-              if (refreshScheduled) return;
-              refreshScheduled = true;
-              setTimeout(async () => {
-                try {
-                  // Re-check current state before refreshing
-                  const { data: latest } = await supabase
-                    .from('devices')
-                    .select('status, connection_method, phone_for_pairing')
-                    .eq('id', device.id)
-                    .single();
-
-                  if (
-                    latest?.status === 'connecting' &&
-                    latest?.connection_method === 'pairing' &&
-                    !sock.authState.creds.registered
-                  ) {
-                    const refreshPhone = String(latest.phone_for_pairing || rawPhone).replace(/\D/g, '');
-                    console.log('⏳ Refreshing pairing code for:', refreshPhone);
-                    const newCode = await sock.requestPairingCode(refreshPhone);
-                    await supabase
-                      .from('devices')
-                      .update({ pairing_code: newCode, status: 'connecting', qr_code: null })
-                      .eq('id', device.id);
-                    console.log('✅ Pairing code refreshed');
-                  }
-                } catch (e) {
-                  console.error('❌ Failed to refresh pairing code:', e?.message || e);
-                }
-              }, 45000);
-            };
-            
-            try {
-              // Request pairing code — user must open WhatsApp > Linked Devices > Link with phone number
-              const code = await sock.requestPairingCode(rawPhone);
-              console.log('✅ Pairing code generated successfully:', code);
-              
-              await supabase
-                .from('devices')
-                .update({ 
-                  pairing_code: code, 
-                  status: 'connecting', 
-                  qr_code: null 
-                })
-                .eq('id', device.id);
-              
-              console.log('✅ Pairing code saved to database — buka WhatsApp > Linked Devices > Link with phone number, lalu masukkan kode.');
-              scheduleRefresh();
-            } catch (pairErr) {
-              const status = pairErr?.output?.statusCode || pairErr?.status;
-              console.error('❌ Failed to generate pairing code:', status, pairErr?.message);
-              
-              // Retry logic for timing issues
-              if (status === 428 || /precondition/i.test(pairErr?.message)) {
-                console.log('⏳ Retrying pairing code in 2 seconds...');
-                setTimeout(async () => {
-                  try {
-                    const code = await sock.requestPairingCode(rawPhone);
-                    console.log('✅ Pairing code generated (retry):', code);
-                    await supabase
-                      .from('devices')
-                      .update({ pairing_code: code, status: 'connecting', qr_code: null })
-                      .eq('id', device.id);
-                    scheduleRefresh();
-                  } catch (retryErr) {
-                    console.error('❌ Retry failed:', retryErr?.message);
-                    await supabase.from('devices').update({ 
-                      status: 'error',
-                      pairing_code: 'Failed to generate code' 
-                    }).eq('id', device.id);
-                  }
-                }, 2000);
-              } else {
-                await supabase.from('devices').update({ 
-                  status: 'error',
-                  pairing_code: 'Failed to generate code' 
-                }).eq('id', device.id);
-              }
+            const handled = await handlePairingCode(sock, device, supabase, qr, pairingCodeRequested);
+            if (handled) {
+              pairingCodeRequested = true;
             }
           }
           // QR method - fallback when pairing not configured
           else if (qr && deviceData?.connection_method !== 'pairing') {
-            console.log('📷 QR Code generated for', device.device_name);
-            const qrDataUrl = await QRCode.toDataURL(qr);
-            await supabase
-              .from('devices')
-              .update({ qr_code: qrDataUrl, status: 'connecting', pairing_code: null })
-              .eq('id', device.id);
-            console.log('✅ QR saved to database');
+            await handleQRCode(sock, device, supabase, qr);
           }
-        } catch (qrError) {
-          console.error('❌ Error generating QR/pairing code:', qrError);
+        } catch (error) {
+          console.error('❌ Error generating QR/pairing code:', error);
         }
       }
 
