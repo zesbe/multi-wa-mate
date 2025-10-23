@@ -2,14 +2,18 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Users, User, Search, Trash2, Plus, Edit, Download, UserPlus } from "lucide-react";
+import { Search, Trash2, Plus, Download, UserPlus, Filter } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { ContactFilter } from "@/components/ContactFilter";
+import { ContactImport } from "@/components/contacts/ContactImport";
+import { GroupManagement } from "@/components/contacts/GroupManagement";
+import { ContactCard } from "@/components/contacts/ContactCard";
+import { useNavigate } from "react-router-dom";
 
 interface Contact {
   id: string;
@@ -21,11 +25,13 @@ interface Contact {
 }
 
 export const Contacts = () => {
+  const navigate = useNavigate();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
+  const [activeFilter, setActiveFilter] = useState<"all" | "groups" | "individuals">("all");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [currentContact, setCurrentContact] = useState<Contact | null>(null);
@@ -40,16 +46,25 @@ export const Contacts = () => {
   }, []);
 
   useEffect(() => {
+    let filtered = contacts;
+
+    // Apply type filter
+    if (activeFilter === "groups") {
+      filtered = filtered.filter((c) => c.is_group);
+    } else if (activeFilter === "individuals") {
+      filtered = filtered.filter((c) => !c.is_group);
+    }
+
+    // Apply search filter
     if (searchQuery) {
-      const filtered = contacts.filter((contact) =>
+      filtered = filtered.filter((contact) =>
         contact.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         contact.phone_number.includes(searchQuery)
       );
-      setFilteredContacts(filtered);
-    } else {
-      setFilteredContacts(contacts);
     }
-  }, [searchQuery, contacts]);
+
+    setFilteredContacts(filtered);
+  }, [searchQuery, contacts, activeFilter]);
 
   const fetchContacts = async () => {
     try {
@@ -110,11 +125,17 @@ export const Contacts = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
+      // Normalize phone number
+      let phone = formData.phone_number.replace(/\D/g, '');
+      if (phone.startsWith('0')) {
+        phone = '62' + phone.slice(1);
+      }
+
       const { error } = await supabase.from("contacts").insert({
         user_id: user.id,
-        device_id: "", // Will be set later when syncing
+        device_id: "",
         name: formData.name,
-        phone_number: formData.phone_number,
+        phone_number: phone,
         is_group: formData.is_group,
       });
 
@@ -134,11 +155,16 @@ export const Contacts = () => {
     if (!currentContact) return;
 
     try {
+      let phone = formData.phone_number.replace(/\D/g, '');
+      if (phone.startsWith('0')) {
+        phone = '62' + phone.slice(1);
+      }
+
       const { error } = await supabase
         .from("contacts")
         .update({
           name: formData.name,
-          phone_number: formData.phone_number,
+          phone_number: phone,
           is_group: formData.is_group,
         })
         .eq("id", currentContact.id);
@@ -167,11 +193,12 @@ export const Contacts = () => {
 
   const handleExportContacts = () => {
     const csv = [
-      ["Name", "Phone Number", "Type"],
+      ["Name", "Phone Number", "Type", "Members"],
       ...contacts.map((c) => [
         c.name || "",
         c.phone_number,
         c.is_group ? "Group" : "Individual",
+        c.is_group && c.group_members ? c.group_members.length : 0,
       ]),
     ]
       .map((row) => row.join(","))
@@ -200,6 +227,11 @@ export const Contacts = () => {
     }
   };
 
+  const handleSendMessage = (contact: Contact) => {
+    // Navigate to broadcast with pre-selected contact
+    navigate('/broadcast', { state: { selectedContact: contact } });
+  };
+
   const stats = {
     total: contacts.length,
     groups: contacts.filter((c) => c.is_group).length,
@@ -208,29 +240,33 @@ export const Contacts = () => {
 
   return (
     <Layout>
-      <div className="space-y-8">
-        <div className="flex items-start justify-between">
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
           <div>
-            <h1 className="text-4xl font-bold text-foreground mb-2">Contacts</h1>
-            <p className="text-muted-foreground">
-              Kelola semua kontak yang tersinkron dari device
+            <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2">
+              Manajemen Kontak
+            </h1>
+            <p className="text-sm md:text-base text-muted-foreground">
+              Kelola kontak individu dan grup untuk broadcast WhatsApp
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button onClick={handleExportContacts} variant="outline" size="sm">
               <Download className="w-4 h-4 mr-2" />
               Export
             </Button>
+            <ContactImport onImportComplete={fetchContacts} />
+            <GroupManagement onGroupCreated={fetchContacts} />
             <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="sm">
                   <Plus className="w-4 h-4 mr-2" />
-                  Tambah
+                  Tambah Manual
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Tambah Kontak</DialogTitle>
+                  <DialogTitle>Tambah Kontak Manual</DialogTitle>
                   <DialogDescription>
                     Tambahkan kontak baru secara manual
                   </DialogDescription>
@@ -252,9 +288,12 @@ export const Contacts = () => {
                       id="phone"
                       value={formData.phone_number}
                       onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
-                      placeholder="628123456789"
+                      placeholder="08123456789 atau 628123456789"
                       required
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Format: 08xxx atau 628xxx (otomatis dinormalisasi)
+                    </p>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Checkbox
@@ -276,7 +315,7 @@ export const Contacts = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
             <CardHeader className="pb-3">
               <CardDescription>Total Kontak</CardDescription>
@@ -285,23 +324,33 @@ export const Contacts = () => {
           </Card>
           <Card>
             <CardHeader className="pb-3">
-              <CardDescription>Individu</CardDescription>
+              <CardDescription>Kontak Individu</CardDescription>
               <CardTitle className="text-3xl">{stats.individuals}</CardTitle>
             </CardHeader>
           </Card>
           <Card>
             <CardHeader className="pb-3">
-              <CardDescription>Grup</CardDescription>
+              <CardDescription>Grup Kontak</CardDescription>
               <CardTitle className="text-3xl">{stats.groups}</CardTitle>
             </CardHeader>
           </Card>
         </div>
 
+        <ContactFilter
+          activeFilter={activeFilter}
+          onFilterChange={setActiveFilter}
+          counts={{
+            all: stats.total,
+            groups: stats.groups,
+            individuals: stats.individuals,
+          }}
+        />
+
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Cari kontak..."
+              placeholder="Cari berdasarkan nama atau nomor..."
               className="pl-10"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -316,73 +365,47 @@ export const Contacts = () => {
         </div>
 
         {filteredContacts.length > 0 && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 p-3 bg-accent/50 rounded-lg">
             <Checkbox
               checked={selectedContacts.length === filteredContacts.length}
               onCheckedChange={toggleSelectAll}
             />
             <Label className="cursor-pointer" onClick={toggleSelectAll}>
-              Pilih Semua ({filteredContacts.length})
+              {selectedContacts.length === filteredContacts.length
+                ? `Semua ${filteredContacts.length} kontak dipilih`
+                : `Pilih Semua (${filteredContacts.length})`}
             </Label>
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredContacts.map((contact) => (
-            <Card key={contact.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      checked={selectedContacts.includes(contact.id)}
-                      onCheckedChange={() => toggleSelectContact(contact.id)}
-                    />
-                    <div className="w-10 h-10 bg-gradient-to-br from-primary/20 to-secondary/20 rounded-full flex items-center justify-center flex-shrink-0">
-                      {contact.is_group ? (
-                        <Users className="w-5 h-5 text-primary" />
-                      ) : (
-                        <User className="w-5 h-5 text-primary" />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <CardTitle className="text-sm truncate">
-                        {contact.name || contact.phone_number}
-                      </CardTitle>
-                      <CardDescription className="text-xs truncate">
-                        {contact.phone_number}
-                      </CardDescription>
-                    </div>
-                  </div>
-                  {contact.is_group && (
-                    <Badge variant="secondary" className="text-xs flex-shrink-0">
-                      Group
-                    </Badge>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="flex gap-2">
-                <Button
-                  onClick={() => openEditDialog(contact)}
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                >
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit
-                </Button>
-                <Button
-                  onClick={() => handleDelete(contact.id)}
-                  variant="destructive"
-                  size="sm"
-                  className="flex-1"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Hapus
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {loading ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">Memuat kontak...</p>
+          </div>
+        ) : filteredContacts.length === 0 ? (
+          <div className="text-center py-12">
+            <Filter className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+            <p className="text-muted-foreground">
+              {searchQuery || activeFilter !== "all"
+                ? "Tidak ada kontak yang sesuai dengan filter"
+                : "Belum ada kontak. Import atau tambahkan kontak baru"}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredContacts.map((contact) => (
+              <ContactCard
+                key={contact.id}
+                contact={contact}
+                selected={selectedContacts.includes(contact.id)}
+                onSelect={() => toggleSelectContact(contact.id)}
+                onEdit={() => openEditDialog(contact)}
+                onDelete={() => handleDelete(contact.id)}
+                onSendMessage={() => handleSendMessage(contact)}
+              />
+            ))}
+          </div>
+        )}
 
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
           <DialogContent>
@@ -424,21 +447,11 @@ export const Contacts = () => {
                 <Label htmlFor="edit-is_group">Ini adalah grup</Label>
               </div>
               <Button type="submit" className="w-full">
-                <Edit className="w-4 h-4 mr-2" />
                 Update Kontak
               </Button>
             </form>
           </DialogContent>
         </Dialog>
-
-        {filteredContacts.length === 0 && !loading && (
-          <div className="text-center py-12">
-            <Users className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-            <p className="text-muted-foreground">
-              {searchQuery ? "Tidak ada kontak yang ditemukan" : "Belum ada kontak tersinkron"}
-            </p>
-          </div>
-        )}
       </div>
     </Layout>
   );
