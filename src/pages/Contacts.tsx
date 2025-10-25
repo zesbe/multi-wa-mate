@@ -43,6 +43,13 @@ export const Contacts = () => {
 
   useEffect(() => {
     fetchContacts();
+    
+    // Check URL params for filter
+    const params = new URLSearchParams(window.location.search);
+    const filterParam = params.get('filter');
+    if (filterParam === 'groups') {
+      setActiveFilter('groups');
+    }
   }, []);
 
   useEffect(() => {

@@ -31,7 +31,7 @@ const menuItems = [
   { icon: PlayCircle, label: "Video Tutorial", path: "/tutorial" },
   { icon: MessageSquare, label: "CRM Chat", path: "/crm-chat", badge: "New" },
   { icon: Radio, label: "Device Broadcast", path: "/devices" },
-  { icon: Users, label: "Grup Kontak", path: "/groups" },
+  { icon: Users, label: "Grup Kontak", path: "/contacts?filter=groups" },
   { icon: UserCircle, label: "List Kontak", path: "/contacts" },
   { icon: FileText, label: "Daftar Template", path: "/templates" },
 ];
@@ -71,7 +71,9 @@ export const Sidebar = ({ isOpen = false, onClose }: SidebarProps = {}) => {
   };
 
   const NavItem = ({ icon: Icon, label, path, badge }: any) => {
-    const isActive = location.pathname === path;
+    const pathWithoutQuery = path.split('?')[0];
+    const isActive = location.pathname === pathWithoutQuery && 
+      (!path.includes('?') || location.search === '?' + path.split('?')[1]);
     
     return (
       <Link
