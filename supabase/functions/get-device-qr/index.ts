@@ -1,24 +1,31 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const REDIS_URL = Deno.env.get('UPSTASH_REDIS_REST_URL')!;
-const REDIS_TOKEN = Deno.env.get('UPSTASH_REDIS_REST_TOKEN')!;
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
 
 /**
  * Get QR code or pairing code from Redis for a device
  * This edge function provides a secure way to fetch temporary codes
  */
 Deno.serve(async (req) => {
-  // CORS headers
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  };
-
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
+    const REDIS_URL = Deno.env.get('UPSTASH_REDIS_REST_URL');
+    const REDIS_TOKEN = Deno.env.get('UPSTASH_REDIS_REST_TOKEN');
+
+    if (!REDIS_URL || !REDIS_TOKEN) {
+      console.error('Redis credentials not configured');
+      return new Response(
+        JSON.stringify({ error: 'Redis not configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Get device ID from URL query params
     const url = new URL(req.url);
     const deviceId = url.searchParams.get('deviceId');
@@ -31,15 +38,23 @@ Deno.serve(async (req) => {
     }
 
     // Verify user has access to this device
-    const authHeader = req.headers.get('Authorization')!;
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Authorization header required' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      console.error('Auth error:', userError);
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -52,16 +67,17 @@ Deno.serve(async (req) => {
       .select('id, user_id')
       .eq('id', deviceId)
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
     if (deviceError || !device) {
+      console.error('Device error:', deviceError);
       return new Response(
         JSON.stringify({ error: 'Device not found or access denied' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Fetch from Redis
+    // Fetch from Redis using MGET to get both QR and pairing code
     const redisResponse = await fetch(REDIS_URL, {
       method: 'POST',
       headers: {
@@ -72,11 +88,18 @@ Deno.serve(async (req) => {
     });
 
     if (!redisResponse.ok) {
-      throw new Error(`Redis error: ${redisResponse.statusText}`);
+      const errorText = await redisResponse.text();
+      console.error('Redis error:', errorText);
+      return new Response(
+        JSON.stringify({ error: 'Redis fetch failed', details: errorText }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     const redisData = await redisResponse.json();
     const [qrCode, pairingCode] = redisData.result || [null, null];
+
+    console.log(`Fetched codes for device ${deviceId}: QR=${!!qrCode}, Pairing=${!!pairingCode}`);
 
     return new Response(
       JSON.stringify({
@@ -88,8 +111,9 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     console.error('Error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
