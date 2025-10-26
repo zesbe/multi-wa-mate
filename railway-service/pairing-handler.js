@@ -1,5 +1,8 @@
 const redis = require('./redis-client');
 
+// In-memory tracking for pairing requests (to avoid Redis overhead)
+const pairingRequestTracker = new Map();
+
 /**
  * Handle Pairing Code generation for WhatsApp connection
  * Pairing codes are stored in Redis with 5 minute TTL
@@ -19,8 +22,8 @@ async function handlePairingCode(sock, device, supabase, readyToRequest, pairing
       return false;
     }
 
-    // Check Redis for existing pairing request
-    const existingTimestamp = await redis.getPairingRequest(device.id);
+    // Check in-memory for existing pairing request
+    const existingTimestamp = pairingRequestTracker.get(device.id);
     if (existingTimestamp) {
       const timeSinceRequest = (Date.now() - existingTimestamp) / 1000;
       if (timeSinceRequest < 50) {
@@ -80,11 +83,15 @@ async function handlePairingCode(sock, device, supabase, readyToRequest, pairing
       return { handled: false };
     }
 
+
     console.log('📱 Requesting pairing code for:', e164);
     
-    // Set pairing request timestamp in Redis
+    // Set pairing request timestamp in memory
     const timestamp = Date.now();
-    await redis.setPairingRequest(device.id, timestamp);
+    pairingRequestTracker.set(device.id, timestamp);
+    
+    // Auto-cleanup after 60 seconds
+    setTimeout(() => pairingRequestTracker.delete(device.id), 60000);
 
     // Small delay to ensure handshake ready
     if (readyToRequest) {
@@ -162,13 +169,9 @@ async function handlePairingCode(sock, device, supabase, readyToRequest, pairing
         }).eq('id', device.id);
         return { handled: false };
       }
-    } finally {
-      // Clean up pairing request tracking
-      await redis.deletePairingRequest(device.id);
     }
   } catch (error) {
     console.error('❌ Error handling pairing code:', error);
-    await redis.deletePairingRequest(device.id);
     return { handled: false };
   }
 }

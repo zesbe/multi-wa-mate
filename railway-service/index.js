@@ -48,7 +48,7 @@ const processingBroadcasts = new Set();
 // Polling mechanism - lebih reliable daripada realtime untuk Railway
 async function startService() {
   console.log('🚀 WhatsApp Baileys Service Started');
-  console.log('📡 Using polling mechanism (every 5 seconds)');
+  console.log('📡 Using polling mechanism (optimized intervals)');
   console.log('🔗 Supabase URL:', supabaseUrl);
 
   // Function to check devices
@@ -148,51 +148,37 @@ async function startService() {
   console.log('🔍 Initial check for pending connections...');
   await checkDevices();
 
-  // Poll every 5 seconds
-  setInterval(checkDevices, 5000);
-  console.log('⏱️ Polling started (every 5 seconds)');
+  // Poll every 10 seconds (reduced from 5s to save resources)
+  setInterval(checkDevices, 10000);
+  console.log('⏱️ Polling started (every 10 seconds)');
 
-  // Check scheduled broadcasts every 10 seconds
-  setInterval(checkScheduledBroadcasts, 10000);
-  console.log('⏰ Scheduled broadcast check started (every 10 seconds)');
+  // Check scheduled broadcasts every 30 seconds (reduced from 10s)
+  setInterval(checkScheduledBroadcasts, 30000);
+  console.log('⏰ Scheduled broadcast check started (every 30 seconds)');
 
-  // Process broadcasts every 3 seconds
-  setInterval(processBroadcasts, 3000);
-  console.log('📤 Broadcast processing started (every 3 seconds)');
+  // Process broadcasts every 10 seconds (reduced from 3s)
+  setInterval(processBroadcasts, 10000);
+  console.log('📤 Broadcast processing started (every 10 seconds)');
 
-  // Health check ping every 30 seconds
-  setInterval(healthCheckPing, 30000);
-  console.log('💓 Health check ping started (every 30 seconds)');
+  // Health check ping every 60 seconds (reduced from 30s)
+  setInterval(healthCheckPing, 60000);
+  console.log('💓 Health check ping started (every 60 seconds)');
 }
 
-// Auth state persisted in Redis + Supabase (Redis for speed, Supabase for persistence)
+// Auth state persisted in Supabase ONLY (Redis removed to save resources)
 async function useSupabaseAuthState(deviceId) {
   let creds, keys;
   try {
-    // Try Redis first (faster)
-    const cachedSession = await redis.getSession(deviceId);
-    if (cachedSession) {
-      console.log('✅ Session loaded from Redis cache');
-      creds = JSON.parse(JSON.stringify(cachedSession.creds), BufferJSON.reviver);
-      keys = JSON.parse(JSON.stringify(cachedSession.keys), BufferJSON.reviver);
-    } else {
-      // Fall back to Supabase
-      const { data } = await supabase
-        .from('devices')
-        .select('session_data')
-        .eq('id', deviceId)
-        .maybeSingle();
+    // Load from Supabase
+    const { data } = await supabase
+      .from('devices')
+      .select('session_data')
+      .eq('id', deviceId)
+      .maybeSingle();
 
-      const stored = data?.session_data || {};
-      creds = stored.creds ? JSON.parse(JSON.stringify(stored.creds), BufferJSON.reviver) : initAuthCreds();
-      keys = stored.keys ? JSON.parse(JSON.stringify(stored.keys), BufferJSON.reviver) : {};
-      
-      // Cache in Redis for next time
-      if (stored.creds) {
-        await redis.setSession(deviceId, { creds: stored.creds, keys: stored.keys });
-        console.log('✅ Session cached to Redis');
-      }
-    }
+    const stored = data?.session_data || {};
+    creds = stored.creds ? JSON.parse(JSON.stringify(stored.creds), BufferJSON.reviver) : initAuthCreds();
+    keys = stored.keys ? JSON.parse(JSON.stringify(stored.keys), BufferJSON.reviver) : {};
   } catch (e) {
     console.error('❌ Failed loading session:', e);
     creds = initAuthCreds();
@@ -206,17 +192,14 @@ async function useSupabaseAuthState(deviceId) {
       saved_at: new Date().toISOString(),
     };
     
-    // Save to both Redis and Supabase
-    await Promise.all([
-      redis.setSession(deviceId, sessionData).catch(e => console.error('Redis save error:', e)),
-      supabase
-        .from('devices')
-        .update({ session_data: sessionData })
-        .eq('id', deviceId)
-        .then(({ error }) => {
-          if (error) console.error('❌ Supabase save error:', error);
-        })
-    ]);
+    // Save to Supabase only
+    await supabase
+      .from('devices')
+      .update({ session_data: sessionData })
+      .eq('id', deviceId)
+      .then(({ error }) => {
+        if (error) console.error('❌ Supabase save error:', error);
+      });
   };
 
   return {
