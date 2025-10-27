@@ -20,12 +20,46 @@ serve(async (req) => {
     const webhookData = await req.json();
     console.log('Received webhook:', webhookData);
 
-    const { order_id, amount, status, payment_method, completed_at } = webhookData;
+    const { order_id, amount, status, payment_method, completed_at, signature } = webhookData;
 
     // Validate webhook data
     if (!order_id || !amount || !status) {
       throw new Error('Invalid webhook data');
     }
+
+    // Verify webhook signature for security
+    const pakasirApiKey = Deno.env.get('PAKASIR_API_KEY');
+    if (!pakasirApiKey) {
+      console.error('PAKASIR_API_KEY not configured');
+      throw new Error('Server configuration error');
+    }
+
+    // Create expected signature: HMAC-SHA256(order_id + amount + status, PAKASIR_API_KEY)
+    const dataToSign = `${order_id}${amount}${status}`;
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(pakasirApiKey);
+    const msgData = encoder.encode(dataToSign);
+    
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    
+    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, msgData);
+    const expectedSignature = Array.from(new Uint8Array(signatureBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    // Compare signatures (constant-time comparison to prevent timing attacks)
+    if (!signature || signature !== expectedSignature) {
+      console.error('Invalid webhook signature');
+      throw new Error('Unauthorized: Invalid signature');
+    }
+
+    console.log('✅ Webhook signature verified');
 
     // Find payment record
     const { data: payment, error: findError } = await supabaseClient

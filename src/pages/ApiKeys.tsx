@@ -5,17 +5,24 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Key, Trash2, Copy, Eye, EyeOff } from "lucide-react";
+import { Plus, Key, Trash2, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { hashApiKey, generateSecureApiKey, getApiKeyPrefix } from "@/utils/apiKeyHash";
 
 interface ApiKey {
   id: string;
   key_name: string;
   api_key: string;
+  api_key_hash: string;
+  api_key_prefix: string;
   is_active: boolean;
   created_at: string;
+}
+
+interface NewApiKey extends ApiKey {
+  plaintext_key?: string; // Only available once at creation
 }
 
 export const ApiKeys = () => {
@@ -23,6 +30,8 @@ export const ApiKeys = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
+  const [newlyCreatedKey, setNewlyCreatedKey] = useState<string | null>(null);
+  const [showNewKeyDialog, setShowNewKeyDialog] = useState(false);
   const [formData, setFormData] = useState({
     key_name: "",
   });
@@ -39,16 +48,12 @@ export const ApiKeys = () => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setApiKeys(data || []);
+      setApiKeys((data as any) || []);
     } catch (error: any) {
       toast.error("Gagal memuat API keys");
     } finally {
       setLoading(false);
     }
-  };
-
-  const generateApiKey = () => {
-    return `wap_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -57,17 +62,27 @@ export const ApiKeys = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      const newApiKey = generateApiKey();
+      // Generate secure random API key
+      const plaintextKey = generateSecureApiKey();
+      
+      // Hash the API key before storing
+      const hashedKey = await hashApiKey(plaintextKey);
+      const keyPrefix = getApiKeyPrefix(plaintextKey);
 
       const { error } = await supabase.from("api_keys").insert({
-        user_id: user.id,
         key_name: formData.key_name,
-        api_key: newApiKey,
+        api_key: '', // Legacy field, will be removed
+        api_key_hash: hashedKey,
+        api_key_prefix: keyPrefix,
         is_active: true,
-      });
+      } as any);
 
       if (error) throw error;
 
+      // Show the plaintext key only once
+      setNewlyCreatedKey(plaintextKey);
+      setShowNewKeyDialog(true);
+      
       toast.success("API Key berhasil dibuat");
       setDialogOpen(false);
       setFormData({ key_name: "" });
@@ -123,8 +138,13 @@ export const ApiKeys = () => {
     });
   };
 
-  const maskApiKey = (key: string) => {
-    return `${key.substring(0, 8)}${"*".repeat(20)}`;
+  const displayApiKey = (apiKey: ApiKey) => {
+    // For newly created keys, show plaintext if visible
+    if (newlyCreatedKey && visibleKeys.has(apiKey.id)) {
+      return newlyCreatedKey;
+    }
+    // For existing keys, show prefix + masked portion
+    return `${apiKey.api_key_prefix || apiKey.api_key?.substring(0, 8) || 'wap_****'}${"*".repeat(24)}`;
   };
 
   return (
@@ -193,36 +213,23 @@ export const ApiKeys = () => {
               <CardContent className="space-y-3">
                 <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
                   <code className="flex-1 text-sm font-mono">
-                    {visibleKeys.has(apiKey.id) ? apiKey.api_key : maskApiKey(apiKey.api_key)}
+                    {displayApiKey(apiKey)}
                   </code>
-                  <Button
-                    onClick={() => toggleKeyVisibility(apiKey.id)}
-                    variant="ghost"
-                    size="icon"
-                  >
-                    {visibleKeys.has(apiKey.id) ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </Button>
+                </div>
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    ⚠️ API key disimpan dengan hash SHA-256. Simpan key Anda dengan aman, tidak bisa dilihat lagi setelah dibuat.
+                  </p>
                 </div>
                 <div className="flex gap-2">
-                  <Button
-                    onClick={() => handleCopy(apiKey.api_key)}
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                  >
-                    <Copy className="w-4 h-4 mr-2" />
-                    Copy
-                  </Button>
                   <Button
                     onClick={() => handleDelete(apiKey.id)}
                     variant="destructive"
                     size="sm"
+                    className="w-full"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Hapus API Key
                   </Button>
                 </div>
               </CardContent>
@@ -238,6 +245,56 @@ export const ApiKeys = () => {
             </p>
           </div>
         )}
+
+        {/* New API Key Display Dialog */}
+        <Dialog open={showNewKeyDialog} onOpenChange={setShowNewKeyDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>API Key Berhasil Dibuat! 🎉</DialogTitle>
+              <DialogDescription>
+                Simpan API key ini dengan aman. Anda tidak akan bisa melihatnya lagi setelah menutup dialog ini.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="p-4 bg-muted rounded-lg">
+                <Label className="text-xs text-muted-foreground mb-2 block">
+                  API Key Anda:
+                </Label>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-sm font-mono break-all bg-background p-2 rounded border">
+                    {newlyCreatedKey}
+                  </code>
+                  <Button
+                    onClick={() => {
+                      if (newlyCreatedKey) {
+                        navigator.clipboard.writeText(newlyCreatedKey);
+                        toast.success("API Key berhasil disalin");
+                      }
+                    }}
+                    variant="outline"
+                    size="icon"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+                <p className="text-sm text-destructive">
+                  ⚠️ <strong>Penting:</strong> API key ini hanya ditampilkan sekali. Pastikan Anda menyimpannya di tempat yang aman sebelum menutup dialog ini.
+                </p>
+              </div>
+              <Button 
+                onClick={() => {
+                  setShowNewKeyDialog(false);
+                  setNewlyCreatedKey(null);
+                }}
+                className="w-full"
+              >
+                Saya Sudah Menyimpannya
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );

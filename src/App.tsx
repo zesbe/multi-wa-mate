@@ -19,6 +19,7 @@ import Contacts from "./pages/Contacts";
 import Chatbot from "./pages/Chatbot";
 import ApiKeys from "./pages/ApiKeys";
 import Webhooks from "./pages/Webhooks";
+import CrmChat from "./pages/CrmChat";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminPlans from "./pages/admin/AdminPlans";
@@ -53,6 +54,7 @@ const App = () => (
             <Route path="/chatbot" element={<ProtectedRoute requiredRole="user"><Chatbot /></ProtectedRoute>} />
             <Route path="/api-keys" element={<ProtectedRoute requiredRole="user"><ApiKeys /></ProtectedRoute>} />
             <Route path="/webhooks" element={<ProtectedRoute requiredRole="user"><Webhooks /></ProtectedRoute>} />
+            <Route path="/crm-chat" element={<ProtectedRoute requiredRole="user"><CrmChat /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute requiredRole="user"><Settings /></ProtectedRoute>} />
             <Route path="/pricing" element={<ProtectedRoute requiredRole="user"><Pricing /></ProtectedRoute>} />
             <Route path="/payment" element={<ProtectedRoute requiredRole="user"><Payment /></ProtectedRoute>} />

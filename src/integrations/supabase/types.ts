@@ -17,6 +17,8 @@ export type Database = {
       api_keys: {
         Row: {
           api_key: string
+          api_key_hash: string | null
+          api_key_prefix: string | null
           created_at: string
           id: string
           is_active: boolean | null
@@ -26,6 +28,8 @@ export type Database = {
         }
         Insert: {
           api_key: string
+          api_key_hash?: string | null
+          api_key_prefix?: string | null
           created_at?: string
           id?: string
           is_active?: boolean | null
@@ -35,6 +39,8 @@ export type Database = {
         }
         Update: {
           api_key?: string
+          api_key_hash?: string | null
+          api_key_prefix?: string | null
           created_at?: string
           id?: string
           is_active?: boolean | null
@@ -583,10 +589,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      generate_api_key: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
+      generate_api_key: { Args: never; Returns: string }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
