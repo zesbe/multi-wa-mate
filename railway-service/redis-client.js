@@ -34,8 +34,8 @@ class RedisClient {
   }
 
   // QR Code Management (Keep - temporary data)
-  async setQRCode(deviceId, qrCode, ttl = 300) {
-    // TTL 5 minutes for QR codes
+  async setQRCode(deviceId, qrCode, ttl = 600) {
+    // TTL 10 minutes for QR codes (extended for better stability)
     const key = `qr:${deviceId}`;
     await this.execute(['SET', key, qrCode, 'EX', ttl]);
   }
@@ -51,8 +51,8 @@ class RedisClient {
   }
 
   // Pairing Code Management (Keep - temporary data)
-  async setPairingCode(deviceId, pairingCode, ttl = 300) {
-    // TTL 5 minutes for pairing codes
+  async setPairingCode(deviceId, pairingCode, ttl = 600) {
+    // TTL 10 minutes for pairing codes (extended for better stability)
     const key = `pairing:${deviceId}`;
     await this.execute(['SET', key, pairingCode, 'EX', ttl]);
   }

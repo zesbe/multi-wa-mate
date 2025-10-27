@@ -27,8 +27,8 @@ async function handleQRCode(sock, device, supabase, qr) {
     // Convert QR string to data URL
     const qrDataUrl = await QRCode.toDataURL(qr);
     
-    // Store QR in Redis with 5 minute TTL
-    await redis.setQRCode(device.id, qrDataUrl, 300);
+    // Store QR in Redis with 10 minute TTL for better stability
+    await redis.setQRCode(device.id, qrDataUrl, 600);
     
     // Update status in database (but don't store QR there)
     const { error } = await supabase
@@ -45,7 +45,7 @@ async function handleQRCode(sock, device, supabase, qr) {
       return false;
     }
 
-    console.log('✅ QR stored in Redis (5 min TTL) - scan with WhatsApp app');
+    console.log('✅ QR stored in Redis (10 min TTL) - scan with WhatsApp app');
     return true;
   } catch (error) {
     console.error('❌ Error generating QR code:', error);

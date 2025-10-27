@@ -4,17 +4,20 @@ const redis = require('./redis-client');
 const pairingRequestTracker = new Map();
 
 /**
- * Handle Pairing Code generation for WhatsApp connection
- * Pairing codes are stored in Redis with 5 minute TTL
+ * Handle Pairing Code generation for WhatsApp connection with exponential backoff
+ * Pairing codes are stored in Redis with 10 minute TTL
  * Based on Baileys documentation for pairing code login
  * @param {Object} sock - WhatsApp socket instance
  * @param {Object} device - Device data from database
  * @param {Object} supabase - Supabase client
  * @param {boolean} readyToRequest - True when connection is 'connecting' or QR event emitted
  * @param {Object} pairingCodeRequested - Object with timestamp to track when code was requested
+ * @param {number} retryCount - Current retry attempt (default 0)
  * @returns {Promise<Object>} - Returns object with handled flag and timestamp
  */
-async function handlePairingCode(sock, device, supabase, readyToRequest, pairingCodeRequested) {
+async function handlePairingCode(sock, device, supabase, readyToRequest, pairingCodeRequested, retryCount = 0) {
+  const MAX_RETRIES = 3;
+  const BACKOFF_DELAYS = [2000, 5000, 8000]; // 2s, 5s, 8s
   try {
     // Only generate pairing code if not already registered
     if (sock.authState.creds.registered) {
@@ -104,8 +107,8 @@ async function handlePairingCode(sock, device, supabase, readyToRequest, pairing
       const code = await sock.requestPairingCode(e164);
       console.log('✅ Pairing code generated successfully:', code);
       
-      // Store pairing code in Redis with 5 minute TTL
-      await redis.setPairingCode(device.id, code, 300);
+      // Store pairing code in Redis with 10 minute TTL for better stability
+      await redis.setPairingCode(device.id, code, 600);
       
       // Update status in database (but don't store code there)
       await supabase
@@ -116,59 +119,47 @@ async function handlePairingCode(sock, device, supabase, readyToRequest, pairing
         })
         .eq('id', device.id);
       
-      console.log('✅ Pairing code stored in Redis (5 min TTL)');
+      console.log('✅ Pairing code stored in Redis (10 min TTL)');
       console.log('📱 Instructions: Open WhatsApp > Linked Devices > Link with phone number > Enter code:', code);
-      console.log('⏰ Code will auto-refresh in 45 seconds');
+      console.log('⏰ Code will auto-refresh in 8 minutes');
       
-      // Schedule auto-refresh after 45 seconds if not connected
+      // Schedule auto-refresh after 8 minutes (480s) - giving 2min buffer before expiry
       scheduleCodeRefresh(sock, device, supabase, e164);
       
       return { handled: true, timestamp };
     } catch (pairErr) {
       const status = pairErr?.output?.statusCode || pairErr?.status;
-      console.error('❌ Failed to generate pairing code:', status, pairErr?.message);
+      console.error(`❌ Failed to generate pairing code (attempt ${retryCount + 1}/${MAX_RETRIES}):`, status, pairErr?.message);
       
-      // Handle timing issues (428 Precondition Failed)
-      if (status === 428 || /precondition/i.test(pairErr?.message)) {
-        console.log('⏳ Timing issue detected - retrying in 2 seconds...');
+      // Check if error is retryable (428 or 401)
+      const isRetryableError = status === 428 || 
+                               status === 401 ||
+                               /precondition/i.test(pairErr?.message) ||
+                               /unauthorized/i.test(pairErr?.message);
+      
+      if (isRetryableError && retryCount < MAX_RETRIES) {
+        const delay = BACKOFF_DELAYS[retryCount];
+        console.log(`⏳ Retryable error detected - retrying in ${delay}ms...`);
         
-        // Retry after short delay
-        setTimeout(async () => {
-          try {
-            const code = await sock.requestPairingCode(e164);
-            console.log('✅ Pairing code generated (retry):', code);
-            
-            await redis.setPairingCode(device.id, code, 300);
-            await supabase
-              .from('devices')
-              .update({ 
-                status: 'connecting',
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', device.id);
-            
-            console.log('✅ Pairing code saved (retry)');
-            scheduleCodeRefresh(sock, device, supabase, e164);
-          } catch (retryErr) {
-            console.error('❌ Retry failed:', retryErr?.message);
-            await redis.setPairingCode(device.id, 'Failed to generate code after retry', 60);
-            await supabase.from('devices').update({ 
-              status: 'error',
-              updated_at: new Date().toISOString()
-            }).eq('id', device.id);
-          }
-        }, 2000);
+        // Wait with exponential backoff
+        await new Promise(resolve => setTimeout(resolve, delay));
         
-        return { handled: true, timestamp }; // Return with timestamp
-      } else {
-        // Other errors
-        await redis.setPairingCode(device.id, 'Failed: ' + (pairErr?.message || 'Unknown error'), 60);
-        await supabase.from('devices').update({ 
-          status: 'error',
-          updated_at: new Date().toISOString()
-        }).eq('id', device.id);
-        return { handled: false };
+        // Recursive retry with incremented counter
+        return handlePairingCode(sock, device, supabase, true, pairingCodeRequested, retryCount + 1);
       }
+      
+      // Max retries exceeded or non-retryable error
+      const errorMsg = retryCount >= MAX_RETRIES 
+        ? `Failed after ${MAX_RETRIES} retries: ${pairErr?.message || 'Unknown error'}`
+        : `Failed: ${pairErr?.message || 'Unknown error'}`;
+      
+      await redis.setPairingCode(device.id, errorMsg, 60);
+      await supabase.from('devices').update({ 
+        status: 'error',
+        updated_at: new Date().toISOString()
+      }).eq('id', device.id);
+      
+      return { handled: false };
     }
   } catch (error) {
     console.error('❌ Error handling pairing code:', error);
@@ -177,8 +168,8 @@ async function handlePairingCode(sock, device, supabase, readyToRequest, pairing
 }
 
 /**
- * Schedule automatic code refresh after 45 seconds
- * Pairing codes typically expire after 60 seconds
+ * Schedule automatic code refresh after 8 minutes
+ * Pairing codes have 10 minute TTL, refresh at 8 min for 2 min buffer
  * @param {Object} sock - WhatsApp socket instance
  * @param {Object} device - Device data
  * @param {Object} supabase - Supabase client
@@ -209,8 +200,8 @@ function scheduleCodeRefresh(sock, device, supabase, originalPhone) {
         
         const newCode = await sock.requestPairingCode(refreshPhone);
         
-        // Store in Redis
-        await redis.setPairingCode(device.id, newCode, 300);
+        // Store in Redis with 10 minute TTL
+        await redis.setPairingCode(device.id, newCode, 600);
         
         await supabase
           .from('devices')
@@ -225,7 +216,7 @@ function scheduleCodeRefresh(sock, device, supabase, originalPhone) {
     } catch (e) {
       console.error('❌ Failed to auto-refresh pairing code:', e?.message || e);
     }
-  }, 45000); // 45 seconds
+  }, 480000); // 8 minutes (480 seconds)
 }
 
 module.exports = { handlePairingCode };
