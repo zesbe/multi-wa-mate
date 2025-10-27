@@ -72,8 +72,11 @@ export const Sidebar = ({ isOpen = false, onClose }: SidebarProps = {}) => {
 
   const NavItem = ({ icon: Icon, label, path, badge }: any) => {
     const pathWithoutQuery = path.split('?')[0];
+    const pathQuery = path.includes('?') ? '?' + path.split('?')[1] : '';
+    
+    // Check if path matches (both pathname and query must match exactly)
     const isActive = location.pathname === pathWithoutQuery && 
-      (!path.includes('?') || location.search === '?' + path.split('?')[1]);
+      location.search === pathQuery;
     
     return (
       <Link
