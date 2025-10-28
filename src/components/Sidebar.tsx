@@ -32,7 +32,7 @@ const menuItems = [
   { icon: MessageSquare, label: "CRM Chat", path: "/crm-chat", badge: "New" },
   { icon: Radio, label: "Device Broadcast", path: "/devices" },
   { icon: Users, label: "Grup Kontak", path: "/contacts?filter=groups" },
-  { icon: UserCircle, label: "List Kontak", path: "/contacts" },
+  { icon: UserCircle, label: "List Kontak", path: "/contacts?filter=individuals" },
   { icon: FileText, label: "Daftar Template", path: "/templates" },
 ];
 

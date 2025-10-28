@@ -36,7 +36,7 @@ export const Contacts = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
-  const [activeFilter, setActiveFilter] = useState<"all" | "groups" | "individuals">("all");
+  const [activeFilter, setActiveFilter] = useState<"all" | "groups" | "individuals">("individuals");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [currentContact, setCurrentContact] = useState<Contact | null>(null);
@@ -57,8 +57,10 @@ export const Contacts = () => {
       setActiveFilter('groups');
     } else if (filterParam === 'individuals') {
       setActiveFilter('individuals');
-    } else {
+    } else if (filterParam === 'all') {
       setActiveFilter('all');
+    } else {
+      setActiveFilter('individuals'); // default List Kontak = individuals only
     }
   }, [searchParams]);
 
@@ -357,12 +359,8 @@ export const Contacts = () => {
           activeFilter={activeFilter}
           onFilterChange={(filter) => {
             setActiveFilter(filter);
-            // Update URL params
-            if (filter === 'all') {
-              navigate('/contacts');
-            } else {
-              navigate(`/contacts?filter=${filter}`);
-            }
+            // Selalu set filter eksplisit di URL
+            navigate(`/contacts?filter=${filter}`);
           }}
           counts={{
             all: stats.total,
