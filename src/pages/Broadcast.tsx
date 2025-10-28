@@ -776,14 +776,16 @@ export const Broadcast = () => {
                               {filteredContactList.map((contact) => (
                                 <div
                                   key={contact.id}
-                                  className="flex items-center gap-2 p-2 hover:bg-accent rounded-md cursor-pointer"
-                                  onClick={() => toggleContact(contact.phone_number)}
+                                  className="flex items-center gap-2 p-2 hover:bg-accent rounded-md"
                                 >
                                   <Checkbox
                                     checked={selectedContacts.includes(contact.phone_number)}
                                     onCheckedChange={() => toggleContact(contact.phone_number)}
                                   />
-                                  <div className="flex items-center gap-2 flex-1">
+                                  <div 
+                                    className="flex items-center gap-2 flex-1 cursor-pointer"
+                                    onClick={() => toggleContact(contact.phone_number)}
+                                  >
                                     {contact.is_group ? (
                                       <Users className="w-4 h-4 text-muted-foreground" />
                                     ) : (
