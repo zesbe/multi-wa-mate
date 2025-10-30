@@ -5,7 +5,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Key, Trash2, Copy } from "lucide-react";
+import { Plus, Key, Trash2, Copy, BookOpen, ExternalLink } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -152,18 +153,26 @@ export const ApiKeys = () => {
       <div className="space-y-8">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-4xl font-bold text-foreground mb-2">API Keys</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-2xl md:text-4xl font-bold text-foreground mb-2">API Keys</h1>
+            <p className="text-sm md:text-base text-muted-foreground">
               Kelola API keys untuk integrasi dengan aplikasi lain
             </p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-gradient-to-r from-primary to-secondary text-white">
-                <Plus className="w-4 h-4 mr-2" />
-                Generate API Key
+          <div className="flex gap-2">
+            <Link to="/api-docs">
+              <Button variant="outline" className="gap-2">
+                <BookOpen className="w-4 h-4" />
+                <span className="hidden sm:inline">Dokumentasi API</span>
+                <ExternalLink className="w-3 h-3" />
               </Button>
-            </DialogTrigger>
+            </Link>
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-gradient-to-r from-primary to-secondary text-white">
+                  <Plus className="w-4 h-4 mr-2" />
+                  <span className="hidden sm:inline">Generate API Key</span>
+                </Button>
+              </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Generate API Key Baru</DialogTitle>
@@ -186,51 +195,96 @@ export const ApiKeys = () => {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
+
+        {/* Info Card */}
+        <Card className="border-blue-500/20 bg-blue-500/5">
+          <CardContent className="py-4">
+            <div className="flex items-start gap-3">
+              <BookOpen className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-2">
+                <p className="text-sm font-medium">
+                  Gunakan API keys untuk integrasi dengan aplikasi eksternal
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Pastikan untuk menyimpan API key dengan aman. Jangan pernah share atau commit ke repository publik.
+                </p>
+                <Link to="/api-docs">
+                  <Button variant="link" size="sm" className="h-auto p-0 text-blue-600 dark:text-blue-400">
+                    Lihat dokumentasi lengkap →
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="grid grid-cols-1 gap-6">
           {apiKeys.map((apiKey) => (
-            <Card key={apiKey.id} className="overflow-hidden">
+            <Card key={apiKey.id} className="overflow-hidden hover:shadow-lg transition-shadow">
               <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-primary/20 to-secondary/20 rounded-lg flex items-center justify-center">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className="w-10 h-10 bg-gradient-to-br from-primary/20 to-secondary/20 rounded-lg flex items-center justify-center shrink-0">
                       <Key className="w-5 h-5 text-primary" />
                     </div>
-                    <div>
-                      <CardTitle className="text-base">{apiKey.key_name}</CardTitle>
+                    <div className="min-w-0 flex-1">
+                      <CardTitle className="text-base truncate">{apiKey.key_name}</CardTitle>
                       <CardDescription className="text-xs mt-1">
-                        Created {new Date(apiKey.created_at).toLocaleDateString()}
+                        Created {new Date(apiKey.created_at).toLocaleDateString('id-ID', { 
+                          day: 'numeric',
+                          month: 'long',
+                          year: 'numeric'
+                        })}
                       </CardDescription>
                     </div>
                   </div>
-                  <Switch
-                    checked={apiKey.is_active}
-                    onCheckedChange={() => handleToggle(apiKey.id, apiKey.is_active)}
-                  />
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs text-muted-foreground hidden sm:inline">
+                      {apiKey.is_active ? 'Aktif' : 'Nonaktif'}
+                    </span>
+                    <Switch
+                      checked={apiKey.is_active}
+                      onCheckedChange={() => handleToggle(apiKey.id, apiKey.is_active)}
+                    />
+                  </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-                  <code className="flex-1 text-sm font-mono">
-                    {displayApiKey(apiKey)}
-                  </code>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-2 block">API Key</Label>
+                  <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border">
+                    <code className="flex-1 text-xs sm:text-sm font-mono break-all">
+                      {displayApiKey(apiKey)}
+                    </code>
+                  </div>
                 </div>
+                
                 <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
-                    ⚠️ API key disimpan dengan hash SHA-256. Simpan key Anda dengan aman, tidak bisa dilihat lagi setelah dibuat.
+                  <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                    <strong>⚠️ Penting:</strong> API key disimpan dengan enkripsi SHA-256. 
+                    Key ini tidak dapat dilihat kembali setelah dialog ditutup. 
+                    Simpan dengan aman di environment variables.
                   </p>
                 </div>
-                <div className="flex gap-2">
+                
+                <div className="flex flex-col sm:flex-row gap-2">
                   <Button
                     onClick={() => handleDelete(apiKey.id)}
                     variant="destructive"
                     size="sm"
-                    className="w-full"
+                    className="flex-1"
                   >
                     <Trash2 className="w-4 h-4 mr-2" />
-                    Hapus API Key
+                    Hapus
                   </Button>
+                  <Link to="/api-docs" className="flex-1">
+                    <Button variant="outline" size="sm" className="w-full">
+                      <BookOpen className="w-4 h-4 mr-2" />
+                      Lihat Docs
+                    </Button>
+                  </Link>
                 </div>
               </CardContent>
             </Card>
@@ -238,12 +292,32 @@ export const ApiKeys = () => {
         </div>
 
         {apiKeys.length === 0 && !loading && (
-          <div className="text-center py-12">
-            <Key className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-            <p className="text-muted-foreground">
-              Belum ada API key. Generate yang pertama untuk memulai!
-            </p>
-          </div>
+          <Card>
+            <CardContent className="text-center py-16">
+              <div className="w-16 h-16 mx-auto mb-4 bg-primary/10 rounded-full flex items-center justify-center">
+                <Key className="w-8 h-8 text-primary" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Belum Ada API Key</h3>
+              <p className="text-muted-foreground mb-4 max-w-md mx-auto">
+                Generate API key pertama Anda untuk mulai mengintegrasikan WAPANELS dengan aplikasi lain
+              </p>
+              <div className="flex gap-2 justify-center">
+                <Button
+                  onClick={() => setDialogOpen(true)}
+                  className="bg-gradient-to-r from-primary to-secondary text-white"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Generate API Key
+                </Button>
+                <Link to="/api-docs">
+                  <Button variant="outline">
+                    <BookOpen className="w-4 h-4 mr-2" />
+                    Lihat Dokumentasi
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* New API Key Display Dialog */}

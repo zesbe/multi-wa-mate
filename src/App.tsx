@@ -18,6 +18,7 @@ import Settings from "./pages/Settings";
 import Contacts from "./pages/Contacts";
 import Chatbot from "./pages/Chatbot";
 import ApiKeys from "./pages/ApiKeys";
+import ApiDocs from "./pages/ApiDocs";
 import Webhooks from "./pages/Webhooks";
 import CrmChat from "./pages/CrmChat";
 import AutoPost from "./pages/AutoPost";
@@ -54,6 +55,7 @@ const App = () => (
             <Route path="/contacts" element={<ProtectedRoute requiredRole="user"><Contacts /></ProtectedRoute>} />
             <Route path="/chatbot" element={<ProtectedRoute requiredRole="user"><Chatbot /></ProtectedRoute>} />
             <Route path="/api-keys" element={<ProtectedRoute requiredRole="user"><ApiKeys /></ProtectedRoute>} />
+            <Route path="/api-docs" element={<ProtectedRoute requiredRole="user"><ApiDocs /></ProtectedRoute>} />
             <Route path="/webhooks" element={<ProtectedRoute requiredRole="user"><Webhooks /></ProtectedRoute>} />
             <Route path="/crm-chat" element={<ProtectedRoute requiredRole="user"><CrmChat /></ProtectedRoute>} />
             <Route path="/auto-post" element={<ProtectedRoute requiredRole="user"><AutoPost /></ProtectedRoute>} />
