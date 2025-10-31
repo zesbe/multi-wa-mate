@@ -20,11 +20,18 @@ export const processMessageVariables = (
 ): string => {
   let processed = message;
 
+  // Process random text selection FIRST (option1|option2|option3)
+  const randomPattern = /\(([^)]+)\)/g;
+  processed = processed.replace(randomPattern, (match, options) => {
+    const choices = options.split('|').map((s: string) => s.trim());
+    return choices[Math.floor(Math.random() * choices.length)];
+  });
+
   // Replace [[NAME]] with WhatsApp contact name (or phone if name not available)
   processed = processed.replace(/\[\[NAME\]\]/g, contact.name || contact.phone_number);
 
-  // Replace {nama} with contact name from database
-  processed = processed.replace(/\{nama\}/g, contact.name || contact.phone_number);
+  // Replace {nama} and {{nama}} with contact name from database
+  processed = processed.replace(/\{\{?nama\}\}?/g, contact.name || contact.phone_number);
 
   // Replace {nomor} with phone number
   processed = processed.replace(/\{nomor\}/g, contact.phone_number);
@@ -40,26 +47,22 @@ export const processMessageVariables = (
     });
   }
 
-  // Process random text selection (option1|option2|option3)
-  const randomPattern = /\(([^)]+)\)/g;
-  processed = processed.replace(randomPattern, (match, options) => {
-    const choices = options.split('|').map((s: string) => s.trim());
-    return choices[Math.floor(Math.random() * choices.length)];
-  });
-
   // Replace time/date variables
   const now = new Date();
   const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
   
-  processed = processed.replace(/\{\{waktu\}\}/g, 
+  // Support both {{waktu}} and {waktu}
+  processed = processed.replace(/\{\{?waktu\}\}?/g, 
     now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
   );
   
-  processed = processed.replace(/\{\{tanggal\}\}/g, 
+  // Support both {{tanggal}} and {tanggal}
+  processed = processed.replace(/\{\{?tanggal\}\}?/g, 
     now.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })
   );
   
-  processed = processed.replace(/\{\{hari\}\}/g, days[now.getDay()]);
+  // Support both {{hari}} and {hari}
+  processed = processed.replace(/\{\{?hari\}\}?/g, days[now.getDay()]);
 
   return processed;
 };

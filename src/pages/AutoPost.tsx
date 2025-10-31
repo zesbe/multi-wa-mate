@@ -6,11 +6,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Send, Clock, Users, Calendar } from "lucide-react";
+import { Plus, Trash2, Send, Clock, Users, Calendar, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { WhatsAppPreview } from "@/components/WhatsAppPreview";
+import { previewMessageVariables } from "@/utils/messageVariables";
 
 interface AutoPostSchedule {
   id: string;
@@ -36,7 +38,9 @@ interface Contact {
 export default function AutoPost() {
   const [schedules, setSchedules] = useState<AutoPostSchedule[]>([]);
   const [groups, setGroups] = useState<Contact[]>([]);
+  const [devices, setDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [formData, setFormData] = useState({
     name: "",
     message: "",
@@ -47,24 +51,52 @@ export default function AutoPost() {
   });
 
   useEffect(() => {
-    fetchGroups();
+    fetchDevices();
     fetchSchedules();
   }, []);
 
-  const fetchGroups = async () => {
+  useEffect(() => {
+    if (selectedDevice) {
+      fetchGroups(selectedDevice);
+    } else {
+      setGroups([]);
+    }
+  }, [selectedDevice]);
+
+  const fetchDevices = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("devices")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setDevices(data || []);
+      
+      // Auto-select first device if available
+      if (data && data.length > 0 && !selectedDevice) {
+        setSelectedDevice(data[0].id);
+      }
+    } catch (error: any) {
+      toast.error("Gagal memuat device");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchGroups = async (deviceId: string) => {
     try {
       const { data, error } = await supabase
         .from("contacts")
         .select("*")
         .eq("is_group", true)
+        .eq("device_id", deviceId)
         .order("name");
 
       if (error) throw error;
       setGroups(data || []);
     } catch (error: any) {
-      toast.error("Gagal memuat grup");
-    } finally {
-      setLoading(false);
+      toast.error("Gagal memuat grup WhatsApp");
     }
   };
 
@@ -113,27 +145,20 @@ export default function AutoPost() {
       return;
     }
 
+    if (!selectedDevice) {
+      toast.error("Pilih device terlebih dahulu");
+      return;
+    }
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
-
-      // Get first device (or let user select later)
-      const { data: devices } = await supabase
-        .from("devices")
-        .select("id")
-        .eq("user_id", user.id)
-        .limit(1);
-
-      if (!devices || devices.length === 0) {
-        toast.error("Anda harus menghubungkan device terlebih dahulu");
-        return;
-      }
 
       const { error } = await supabase
         .from("auto_post_schedules")
         .insert({
           user_id: user.id,
-          device_id: devices[0].id,
+          device_id: selectedDevice,
           name: formData.name,
           message: formData.message,
           target_groups: formData.target_groups,
@@ -215,6 +240,37 @@ export default function AutoPost() {
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <div className="space-y-2">
+                    <Label htmlFor="device">Pilih Device WhatsApp</Label>
+                    <Select
+                      value={selectedDevice}
+                      onValueChange={setSelectedDevice}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih device..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {devices.length === 0 ? (
+                          <div className="p-2 text-sm text-muted-foreground">
+                            Tidak ada device. Hubungkan device terlebih dahulu.
+                          </div>
+                        ) : (
+                          devices.map((device) => (
+                            <SelectItem key={device.id} value={device.id}>
+                              <div className="flex items-center gap-2">
+                                <Smartphone className="w-4 h-4" />
+                                {device.device_name} - {device.status === "connected" ? "🟢 Terhubung" : "🔴 Terputus"}
+                              </div>
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Pilih device untuk melihat daftar grup WhatsApp
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="name">Nama Jadwal</Label>
                     <Input
                       id="name"
@@ -280,10 +336,30 @@ export default function AutoPost() {
                       rows={8}
                       required
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Tips: Gunakan variabel [[NAMA]], {"{"}nama{"}"}, {"{"}waktu{"}"}, {"{"}tanggal{"}"}
-                    </p>
+                    <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                      <p className="text-xs text-blue-600 dark:text-blue-400 font-medium mb-2">
+                        💡 Gunakan variabel untuk pesan dinamis:
+                      </p>
+                      <ul className="text-xs text-muted-foreground space-y-1 ml-4 list-disc">
+                        <li><code className="bg-muted px-1 rounded">(halo|hai|hi)</code> - Random pilihan text</li>
+                        <li><code className="bg-muted px-1 rounded">{"{{"}nama{"}}"}  atau [[NAME]]</code> - Nama grup/kontak</li>
+                        <li><code className="bg-muted px-1 rounded">{"{{"}waktu{"}}"}</code> - Waktu saat ini (contoh: 09:30)</li>
+                        <li><code className="bg-muted px-1 rounded">{"{{"}tanggal{"}}"}</code> - Tanggal saat ini (contoh: 31/10/2025)</li>
+                        <li><code className="bg-muted px-1 rounded">{"{{"}hari{"}}"}</code> - Hari saat ini (contoh: Senin)</li>
+                      </ul>
+                    </div>
                   </div>
+
+                  {/* Message Preview */}
+                  {formData.message && (
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">Preview Pesan:</Label>
+                      <WhatsAppPreview 
+                        message={previewMessageVariables(formData.message)}
+                        hasMedia={false}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -293,9 +369,13 @@ export default function AutoPost() {
                   Pilih Grup Target ({formData.target_groups.length} dipilih)
                 </Label>
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-y-auto p-4 border rounded-lg bg-muted/30">
-                  {groups.length === 0 ? (
+                  {!selectedDevice ? (
                     <div className="col-span-full text-center py-8 text-muted-foreground">
-                      Tidak ada grup. Buat grup terlebih dahulu di halaman Kontak.
+                      Pilih device terlebih dahulu untuk melihat grup WhatsApp
+                    </div>
+                  ) : groups.length === 0 ? (
+                    <div className="col-span-full text-center py-8 text-muted-foreground">
+                      Tidak ada grup WhatsApp di device ini. Sync kontak terlebih dahulu.
                     </div>
                   ) : (
                     groups.map((group) => (
