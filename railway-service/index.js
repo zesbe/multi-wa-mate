@@ -250,7 +250,7 @@ async function connectWhatsApp(device, isRecovery = false) {
       version,
       auth: state,
       printQRInTerminal: false, // We'll handle QR ourselves
-      browser: Browsers.appropriate('Desktop'),
+      browser: ['HalloWa', 'Chrome', '120.0.0'],
       connectTimeoutMs: 60_000,
       keepAliveIntervalMs: 10_000,
       syncFullHistory: false,
@@ -675,6 +675,61 @@ async function processBroadcasts() {
             // Extract phone number from contact object or use as string
             const phoneNumber = typeof contact === 'object' ? contact.phone_number : contact;
             
+            // Process message variables for personalization
+            let processedMessage = broadcast.message;
+            
+            if (typeof contact === 'object' && contact.name) {
+              // Get contact info from database if available
+              const { data: contactData } = await supabase
+                .from('contacts')
+                .select('name, var1, var2, var3')
+                .eq('phone_number', phoneNumber)
+                .maybeSingle();
+              
+              const contactInfo = contactData || { name: contact.name || phoneNumber };
+              
+              // Process random text selection FIRST (option1|option2|option3)
+              const randomPattern = /\(([^)]+)\)/g;
+              processedMessage = processedMessage.replace(randomPattern, (match, options) => {
+                const choices = options.split('|').map(s => s.trim());
+                return choices[Math.floor(Math.random() * choices.length)];
+              });
+              
+              // Replace [[NAME]] with WhatsApp contact name
+              processedMessage = processedMessage.replace(/\[\[NAME\]\]/g, contactInfo.name || phoneNumber);
+              
+              // Replace {nama} and {{nama}} with contact name
+              processedMessage = processedMessage.replace(/\{\{?nama\}\}?/g, contactInfo.name || phoneNumber);
+              
+              // Replace {nomor} with phone number
+              processedMessage = processedMessage.replace(/\{nomor\}/g, phoneNumber);
+              
+              // Replace custom variables {var1}, {var2}, {var3}
+              if (contactData?.var1) {
+                processedMessage = processedMessage.replace(/\{var1\}/g, contactData.var1);
+              }
+              if (contactData?.var2) {
+                processedMessage = processedMessage.replace(/\{var2\}/g, contactData.var2);
+              }
+              if (contactData?.var3) {
+                processedMessage = processedMessage.replace(/\{var3\}/g, contactData.var3);
+              }
+              
+              // Replace time/date variables
+              const now = new Date();
+              const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+              
+              processedMessage = processedMessage.replace(/\{\{?waktu\}\}?/g, 
+                now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+              );
+              
+              processedMessage = processedMessage.replace(/\{\{?tanggal\}\}?/g, 
+                now.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })
+              );
+              
+              processedMessage = processedMessage.replace(/\{\{?hari\}\}?/g, days[now.getDay()]);
+            }
+            
             if (!phoneNumber) {
               console.error('❌ Invalid contact:', contact);
               failedCount++;
@@ -719,12 +774,12 @@ async function processBroadcasts() {
                   if (mediaType === 'image') {
                     messageContent = {
                       image: Buffer.from(buffer),
-                      caption: broadcast.message || ''
+                      caption: processedMessage || ''
                     };
                   } else if (mediaType === 'video') {
                     messageContent = {
                       video: Buffer.from(buffer),
-                      caption: broadcast.message || ''
+                      caption: processedMessage || ''
                     };
                   } else if (mediaType === 'audio') {
                     messageContent = {
@@ -734,12 +789,12 @@ async function processBroadcasts() {
                   } else if (mediaType === 'document') {
                     messageContent = {
                       document: Buffer.from(buffer),
-                      caption: broadcast.message || '',
+                      caption: processedMessage || '',
                       mimetype: 'application/pdf'
                     };
                   } else {
                     // Fallback to text message
-                    messageContent = { text: broadcast.message };
+                    messageContent = { text: processedMessage };
                   }
                   
                   mediaLoaded = true;
@@ -760,7 +815,7 @@ async function processBroadcasts() {
               }
             } else {
               // Text only message
-              messageContent = { text: broadcast.message };
+              messageContent = { text: processedMessage };
             }
             
             // Send message

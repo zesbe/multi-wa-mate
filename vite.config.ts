@@ -17,14 +17,16 @@ export default defineConfig(({ mode }) => ({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'robots.txt'],
       manifest: {
-        name: 'WAPANELS - WhatsApp Multi-Device Management',
+        name: 'WAPANELS - WhatsApp Multi-Device Management Platform',
         short_name: 'WAPANELS',
-        description: 'Kelola multiple WhatsApp devices, broadcast messages, chatbot dalam satu platform',
+        description: 'Kelola multiple WhatsApp devices, broadcast messages, chatbot automation, dan lebih banyak lagi dalam satu platform profesional',
         theme_color: '#10b981',
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/',
+        categories: ['business', 'productivity', 'social'],
+        lang: 'id-ID',
         icons: [
           {
             src: '/icon-192.png',
@@ -37,6 +39,19 @@ export default defineConfig(({ mode }) => ({
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'
+          },
+          {
+            src: '/og-image.png',
+            sizes: '1200x630',
+            type: 'image/png',
+            purpose: 'any'
+          }
+        ],
+        screenshots: [
+          {
+            src: '/og-image.png',
+            sizes: '1200x630',
+            type: 'image/png'
           }
         ]
       },
