@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>HalloWa - WhatsApp Bot Marketing Platform</title>
+    <meta name="description" content="Platform WhatsApp Bot Marketing profesional untuk kelola multiple devices, broadcast messages, chatbot automation dalam satu platform terpadu" />
+    <meta name="keywords" content="hallowa, whatsapp bot marketing, multi-device, broadcast, chatbot, automation, whatsapp business, device management, wa marketing, whatsapp api" />
+    <meta name="author" content="HalloWa" />
+    <meta name="theme-color" content="#10b981" />
+    <link rel="canonical" href="https://multi-wa-mate.vercel.app/" />
+    
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="HalloWa" />
+    <link rel="apple-touch-icon" href="https://multi-wa-mate.vercel.app/icon-192.png" />
+    
+    <!-- Open Graph / Facebook / WhatsApp -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://multi-wa-mate.vercel.app" />
+    <meta property="og:site_name" content="HalloWa" />
+    <meta property="og:title" content="HalloWa - WhatsApp Bot Marketing Platform" />
+    <meta property="og:description" content="Platform WhatsApp Bot Marketing profesional untuk kelola multiple devices, broadcast messages, chatbot automation dalam satu platform terpadu" />
+    <meta property="og:image" content="https://opengraph.b-cdn.net/production/images/50d0a231-bedd-4f46-9279-cbf3e7c85f3f.jpg?token=NFBy_Y_pUcEvu5VLOOmDzK5D1hrjtJdao5SEyv8TUog&height=1024&width=1024&expires=33298045112" />
+    <meta property="og:locale" content="id_ID" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta property="twitter:domain" content="multi-wa-mate.vercel.app" />
+    <meta name="twitter:site" content="@hallowa" />
+    <meta property="twitter:url" content="https://multi-wa-mate.vercel.app" />
+    <meta name="twitter:title" content="HalloWa - WhatsApp Bot Marketing Platform" />
+    <meta name="twitter:description" content="Platform WhatsApp Bot Marketing profesional untuk kelola multiple devices, broadcast messages, chatbot automation dalam satu platform terpadu" />
+    <meta name="twitter:image" content="https://opengraph.b-cdn.net/production/images/50d0a231-bedd-4f46-9279-cbf3e7c85f3f.jpg?token=NFBy_Y_pUcEvu5VLOOmDzK5D1hrjtJdao5SEyv8TUog&height=1024&width=1024&expires=33298045112" />
+    
+    <!-- Meta Tags Generated via https://www.opengraph.xyz -->
+    
+    <!-- Favicon -->
+    <link rel="icon" href="/favicon.ico" type="image/x-icon" />
+
+    <!-- Service Worker Registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(registration => {
+              console.log('SW registered: ', registration);
+            })
+            .catch(registrationError => {
+              console.log('SW registration failed: ', registrationError);
+            });
+        });
+      }
+    </script>
+    
+    <!-- Structured Data for SEO -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "HalloWa",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web, Android, iOS",
+      "url": "https://multi-wa-mate.vercel.app",
+      "description": "HalloWa adalah platform WhatsApp Bot Marketing profesional yang memungkinkan Anda mengelola multiple WhatsApp devices, broadcast messages, chatbot automation, dan berbagai fitur marketing lainnya dalam satu platform terpadu.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.8",
+        "ratingCount": "150"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "HalloWa",
+        "url": "https://multi-wa-mate.vercel.app"
+      },
+      "featureList": [
+        "Multi-Device WhatsApp Management",
+        "Broadcast Messages",
+        "Chatbot Automation",
+        "Contact Management",
+        "Device Pairing with QR & Code",
+        "Scheduled Messages",
+        "Auto Post to Groups",
+        "API Integration",
+        "WhatsApp Marketing Tools"
+      ],
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": "https://multi-wa-mate.vercel.app/?s={search_term_string}",
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
