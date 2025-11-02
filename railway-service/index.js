@@ -260,10 +260,18 @@ async function connectWhatsApp(device, isRecovery = false) {
 
     // Track pairing code request status with timestamp
     let pairingCodeRequested = null;
+    let pairingAttempted = false;
 
     // Handle connection updates
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
+
+      console.log(`📡 Connection update for ${device.device_name}:`, {
+        connection,
+        registered: sock.authState.creds.registered,
+        isRecovery,
+        hasQR: !!qr
+      });
 
       // IMPORTANT: Only generate QR/pairing if NOT in recovery mode AND not registered
       if (!sock.authState.creds.registered && !isRecovery) {
@@ -274,20 +282,43 @@ async function connectWhatsApp(device, isRecovery = false) {
             .eq('id', device.id)
             .single();
 
+          console.log(`🔍 Device config:`, {
+            connection_method: deviceData?.connection_method,
+            has_phone: !!deviceData?.phone_for_pairing,
+            status: deviceData?.status
+          });
+
           // Pairing code method - prioritize this over QR
           if (
             deviceData?.connection_method === 'pairing' &&
-            deviceData?.phone_for_pairing
+            deviceData?.phone_for_pairing &&
+            !pairingAttempted
           ) {
-            const readyToRequest = connection === 'connecting' || !!qr;
-            const result = await handlePairingCode(sock, device, supabase, readyToRequest, pairingCodeRequested);
-            if (result?.handled) {
-              pairingCodeRequested = { timestamp: result.timestamp };
-              console.log('✅ Pairing code request tracked:', new Date(result.timestamp).toISOString());
+            // Wait for connection to be ready before requesting pairing code
+            // This ensures WhatsApp handshake is complete
+            const readyToRequest = connection === 'connecting' || connection === 'open' || !!qr;
+            
+            console.log(`📱 Pairing code check:`, {
+              readyToRequest,
+              connection,
+              pairingAttempted
+            });
+
+            if (readyToRequest) {
+              console.log('🔐 Requesting pairing code...');
+              const result = await handlePairingCode(sock, device, supabase, readyToRequest, pairingCodeRequested);
+              if (result?.handled) {
+                pairingCodeRequested = { timestamp: result.timestamp };
+                pairingAttempted = true;
+                console.log('✅ Pairing code request tracked:', new Date(result.timestamp).toISOString());
+              } else if (result?.handled === false) {
+                console.log('⚠️ Pairing code request failed or skipped');
+              }
             }
           }
           // QR method - fallback when pairing not configured
           else if (qr && deviceData?.connection_method !== 'pairing') {
+            console.log('📷 Generating QR code...');
             await handleQRCode(sock, device, supabase, qr);
           }
         } catch (error) {
