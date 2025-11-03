@@ -1,1242 +1,513 @@
-import { Layout } from "@/components/Layout";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Smartphone, QrCode, Trash2, RefreshCw, Copy, LogOut, Info, RotateCcw, Database, Bell, BellOff, AlertCircle } from "lucide-react";
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
+import React, { useState, useEffect, useCallback } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
+import io, { Socket } from 'socket.io-client';
 import { 
-  requestNotificationPermission, 
-  notifyDeviceConnected, 
-  notifyDeviceDisconnected,
-  notifyDeviceError 
-} from "@/utils/notifications";
-import { DeviceCard } from "@/components/DeviceCard";
-import { useSubscription } from "@/hooks/useSubscription";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+  Card, 
+  CardContent, 
+  CardDescription, 
+  CardHeader, 
+  CardTitle 
+} from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { 
+  Smartphone, 
+  QrCode, 
+  Key, 
+  Loader2, 
+  CheckCircle,
+  AlertCircle,
+  RefreshCw,
+  Copy,
+  Trash2
+} from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 interface Device {
-  id: string;
-  device_name: string;
+  sessionId: string;
+  phoneNumber: string;
+  name: string;
   status: string;
-  phone_number: string | null;
-  qr_code: string | null;
-  pairing_code: string | null;
-  connection_method: string | null;
-  phone_for_pairing: string | null;
-  last_connected_at: string | null;
-  api_key: string | null;
-  server_id: string | null;
-  webhook_url: string | null;
-  is_multidevice: boolean;
+  platform: string;
+  connectedAt?: string;
 }
 
-export const Devices = () => {
-  const { canAddDevice, isLimitReached, subscription, refreshUsage } = useSubscription();
+const Devices: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [qrDialogOpen, setQrDialogOpen] = useState(false);
-  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
-  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
-  const [deviceName, setDeviceName] = useState("");
-  const [connectionStatus, setConnectionStatus] = useState<string>("idle");
-  const [qrExpiry, setQrExpiry] = useState<number>(0);
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [swipedDeviceId, setSwipedDeviceId] = useState<string | null>(null);
+  const [qrCode, setQrCode] = useState<string>('');
+  const [pairingCode, setPairingCode] = useState<string>('');
+  const [phoneNumber, setPhoneNumber] = useState<string>('');
+  const [countryCode, setCountryCode] = useState<string>('62'); // Default Indonesia
   const [connectionMethod, setConnectionMethod] = useState<'qr' | 'pairing'>('qr');
-  const [pairingPhone, setPairingPhone] = useState('');
+  const [isConnecting, setIsConnecting] = useState<boolean>(false);
+  const [connectionStatus, setConnectionStatus] = useState<string>('');
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [sessionId] = useState<string>(`session-${Date.now()}`);
+  const [qrExpiryTime, setQrExpiryTime] = useState<number>(0);
+  const [error, setError] = useState<string>('');
 
-  // Request notification permission on mount
+  // Initialize socket connection
   useEffect(() => {
-    requestNotificationPermission().then(granted => {
-      setNotificationsEnabled(granted);
-    });
-  }, []);
-
-  useEffect(() => {
-    fetchDevices();
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
     
-    // Subscribe to real-time updates
-    const channel = supabase
-      .channel('devices-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'devices'
-        },
-        (payload) => {
-          console.log('Device update:', payload);
-          fetchDevices();
-          
-          // Send notifications for device status changes
-          if (payload.eventType === 'UPDATE' && notificationsEnabled) {
-            const oldStatus = payload.old?.status;
-            const newStatus = payload.new?.status;
-            const deviceName = payload.new?.device_name;
-            
-            if (oldStatus !== newStatus && deviceName) {
-              if (newStatus === 'connected') {
-                notifyDeviceConnected(deviceName);
-                toast.success(`${deviceName} Terhubung! ✅`, {
-                  description: 'Device berhasil connect ke WhatsApp'
-                });
-              } else if (newStatus === 'connecting' && oldStatus === 'connected') {
-                toast.info(`${deviceName} Reconnecting... 🔄`, {
-                  description: 'Device sedang mencoba reconnect otomatis'
-                });
-              } else if (newStatus === 'disconnected' && oldStatus === 'connected') {
-                notifyDeviceDisconnected(deviceName);
-                toast.warning(`${deviceName} Terputus ⚠️`, {
-                  description: 'Koneksi WhatsApp terputus'
-                });
-              } else if (newStatus === 'error') {
-                notifyDeviceError(deviceName);
-                toast.error(`${deviceName} Error ❌`, {
-                  description: 'Terjadi kesalahan pada device'
-                });
-              }
-            }
-          }
-          
-          // Auto-close dialog when connected
-          if (payload.eventType === 'UPDATE' && payload.new?.status === 'connected') {
-            setTimeout(() => {
-              setQrDialogOpen(false);
-              setConnectionStatus("idle");
-            }, 1500);
-          }
-        }
-      )
-      .subscribe();
+    const newSocket = io(backendUrl, {
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+    });
+
+    newSocket.on('connect', () => {
+      console.log('Connected to backend');
+      setConnectionStatus('Connected to server');
+      // Get existing devices on connect
+      newSocket.emit('getDevices');
+    });
+
+    newSocket.on('disconnect', () => {
+      console.log('Disconnected from backend');
+      setConnectionStatus('Disconnected from server');
+    });
+
+    // Handle QR code
+    newSocket.on('qr', (data: { sessionId: string; qr: string }) => {
+      console.log('QR code received');
+      setQrCode(data.qr);
+      setIsConnecting(true);
+      setError('');
+      // Reset QR expiry timer (QR codes expire in ~60 seconds)
+      setQrExpiryTime(60);
+    });
+
+    // Handle pairing code
+    newSocket.on('pairingCode', (data: { sessionId: string; code: string; phoneNumber: string }) => {
+      console.log('Pairing code received:', data.code);
+      setPairingCode(data.code);
+      setIsConnecting(true);
+      setError('');
+      toast.success(`Pairing code: ${data.code}`);
+    });
+
+    // Handle successful connection
+    newSocket.on('connectionSuccess', (data: { sessionId: string; deviceInfo: Device }) => {
+      console.log('Connection successful:', data);
+      setIsConnecting(false);
+      setQrCode('');
+      setPairingCode('');
+      setPhoneNumber('');
+      setConnectionStatus('Connected successfully');
+      
+      // Add new device to list
+      setDevices(prev => [...prev, data.deviceInfo]);
+      
+      toast.success('WhatsApp connected successfully!');
+    });
+
+    // Handle connection errors
+    newSocket.on('connectionError', (data: { sessionId: string; error: string }) => {
+      console.error('Connection error:', data);
+      setIsConnecting(false);
+      setError(data.error);
+      setConnectionStatus('Connection failed');
+      toast.error(data.error);
+    });
+
+    // Handle pairing errors
+    newSocket.on('pairingError', (data: { sessionId: string; error: string; details?: string }) => {
+      console.error('Pairing error:', data);
+      setIsConnecting(false);
+      setError(data.details || data.error);
+      setPairingCode('');
+      toast.error(data.details || data.error);
+    });
+
+    // Handle connection closed
+    newSocket.on('connectionClosed', (data: { sessionId: string; reason: string; message: string }) => {
+      console.log('Connection closed:', data);
+      setIsConnecting(false);
+      setQrCode('');
+      setPairingCode('');
+      setConnectionStatus(data.message);
+      
+      // Remove device from list
+      setDevices(prev => prev.filter(d => d.sessionId !== data.sessionId));
+      
+      toast(data.message);
+    });
+
+    // Handle devices list
+    newSocket.on('devicesList', (data: { devices: Device[] }) => {
+      console.log('Devices list received:', data);
+      setDevices(data.devices || []);
+    });
+
+    // Handle general errors
+    newSocket.on('error', (data: { message: string; error?: string }) => {
+      console.error('Socket error:', data);
+      setError(data.message);
+      setIsConnecting(false);
+      toast.error(data.message);
+    });
+
+    setSocket(newSocket);
 
     return () => {
-      supabase.removeChannel(channel);
-      if (pollingInterval) {
-        clearInterval(pollingInterval);
-      }
+      newSocket.disconnect();
     };
   }, []);
 
-  // QR expiry countdown
+  // QR Code expiry countdown
   useEffect(() => {
-    if (qrExpiry > 0 && qrDialogOpen) {
+    if (qrExpiryTime > 0) {
       const timer = setTimeout(() => {
-        setQrExpiry(qrExpiry - 1);
+        setQrExpiryTime(qrExpiryTime - 1);
       }, 1000);
       return () => clearTimeout(timer);
-    } else if (qrExpiry === 0 && connectionStatus === "qr_ready") {
-      setConnectionStatus("qr_expired");
+    } else if (qrExpiryTime === 0 && qrCode) {
+      setQrCode('');
+      setError('QR code expired. Please request a new one.');
     }
-  }, [qrExpiry, qrDialogOpen, connectionStatus]);
+  }, [qrExpiryTime, qrCode]);
 
-  const fetchDevices = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("devices")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setDevices(data || []);
-    } catch (error: any) {
-      toast.error("Gagal memuat data device");
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCreateDevice = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Check limit
-    if (!canAddDevice()) {
-      toast.error("Limit device tercapai!", {
-        description: `Plan Anda hanya mengizinkan ${subscription?.plan?.max_devices || 0} device. Upgrade plan untuk menambah lebih banyak.`
-      });
-      return;
-    }
-    
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not authenticated");
-
-      const { error } = await supabase.from("devices").insert({
-        user_id: user.id,
-        device_name: deviceName,
-        status: "disconnected",
-      });
-
-      if (error) throw error;
-
-      toast.success("Device berhasil ditambahkan");
-      setDeviceName("");
-      setDialogOpen(false);
-      fetchDevices();
-      refreshUsage(); // Refresh usage stats
-    } catch (error: any) {
-      toast.error(error.message);
-    }
-  };
-
-  const handleConnectDevice = async (device: Device, method?: 'qr' | 'pairing', phone?: string) => {
-    setSelectedDevice(device);
-    setQrDialogOpen(true);
-    
-    // If no method specified, show selection dialog
-    if (!method) {
-      setConnectionStatus("idle");
+  // Request QR Code
+  const requestQRCode = useCallback(() => {
+    if (!socket) {
+      toast.error('Not connected to server');
       return;
     }
 
-    setConnectionStatus("connecting");
-    setQrExpiry(60);
+    setError('');
+    setIsConnecting(true);
+    setConnectionStatus('Requesting QR code...');
     
-    try {
-      // Clear existing polling
-      if (pollingInterval) {
-        clearInterval(pollingInterval);
-      }
-      
-      // Update device status to 'connecting' - Railway service will detect this
-      const updateData: any = { 
-        status: "connecting",
-        qr_code: null,
-        pairing_code: null,
-        connection_method: method
-      };
+    socket.emit('requestQR', { sessionId });
+  }, [socket, sessionId]);
 
-      if (method === 'pairing' && phone) {
-        updateData.phone_for_pairing = phone;
-      }
+  // Request Pairing Code
+  const requestPairingCode = useCallback(() => {
+    if (!socket) {
+      toast.error('Not connected to server');
+      return;
+    }
 
-      const { error } = await supabase
-        .from("devices")
-        .update(updateData)
-        .eq("id", device.id);
+    if (!phoneNumber) {
+      toast.error('Please enter your phone number');
+      return;
+    }
 
-      if (error) throw error;
+    // Validate phone number format
+    const phoneRegex = /^[0-9]{8,15}$/;
+    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+    
+    if (!phoneRegex.test(cleanPhone)) {
+      toast.error('Invalid phone number format');
+      return;
+    }
 
-      setConnectionStatus(method === 'qr' ? "generating_qr" : "generating_pairing");
-      toast.info(method === 'qr' ? "Menghubungkan ke WhatsApp..." : "Membuat kode pairing...");
+    const fullPhoneNumber = `${countryCode}${cleanPhone}`;
+    
+    setError('');
+    setIsConnecting(true);
+    setConnectionStatus('Requesting pairing code...');
+    
+    socket.emit('requestPairing', { 
+      sessionId, 
+      phoneNumber: fullPhoneNumber 
+    });
+  }, [socket, sessionId, phoneNumber, countryCode]);
 
-      // Poll updates from DB and fetch ephemeral codes from Edge Function (Redis)
-      const interval = setInterval(async () => {
-        // 1) Read latest device row
-        const { data: row, error: rowError } = await supabase
-          .from("devices")
-          .select("*")
-          .eq("id", device.id)
-          .single();
-
-        if (rowError) {
-          console.error("Polling error:", rowError);
-          return;
-        }
-
-        // 2) Fetch QR/Pairing codes from Edge Function (stored in Redis)
-        let qrCode: string | null = null;
-        let pairingCode: string | null = null;
-        try {
-          const { data: codes } = await supabase.functions.invoke('get-device-qr', {
-            body: { deviceId: device.id },
-          });
-          qrCode = codes?.qrCode ?? null;
-          pairingCode = codes?.pairingCode ?? null;
-        } catch (fnErr) {
-          // Non-fatal: just log
-          console.debug('get-device-qr error (non-fatal):', fnErr);
-        }
-
-        if (row) {
-          // Merge ephemeral codes into local state (do NOT write to DB)
-          const merged: any = { ...row, qr_code: qrCode, pairing_code: pairingCode };
-          setSelectedDevice(merged);
-
-          // QR flow
-          if (qrCode && row.status === "connecting" && method === 'qr') {
-            if (connectionStatus !== "qr_ready" || merged.qr_code !== selectedDevice?.qr_code) {
-              setConnectionStatus("qr_ready");
-              setQrExpiry(60);
-              toast.success("QR Code siap! Scan sekarang");
-            }
-          }
-
-          // Pairing flow
-          if (pairingCode && row.status === "connecting" && method === 'pairing') {
-            if (connectionStatus !== "pairing_ready" || merged.pairing_code !== selectedDevice?.pairing_code) {
-              setConnectionStatus("pairing_ready");
-              toast.success("Kode pairing siap! Masukkan di WhatsApp");
-            }
-          }
-
-          // Connected
-          if (row.status === "connected") {
-            setConnectionStatus("connected");
-            toast.success("WhatsApp berhasil terhubung!");
-            clearInterval(interval);
-            setPollingInterval(null);
-            fetchDevices();
-            setTimeout(() => {
-              setQrDialogOpen(false);
-              setConnectionStatus("idle");
-              setPairingPhone('');
-            }, 1500);
-          }
-
-          // Error
-          if (row.status === "error") {
-            setConnectionStatus("error");
-            toast.error("Connection error. Silakan coba lagi.");
-            clearInterval(interval);
-            setPollingInterval(null);
-          }
-        }
-      }, 2000); // Poll every 2 seconds
-
-      setPollingInterval(interval);
-
-      // Auto-stop polling after 5 minutes
-      setTimeout(async () => {
-        if (interval) {
-          clearInterval(interval);
-          setPollingInterval(null);
-          if (connectionStatus !== "connected") {
-            setConnectionStatus(method === 'qr' ? "qr_expired" : "pairing_expired");
-            toast.error(method === 'qr' ? "QR Code expired. Silakan coba lagi." : "Kode pairing expired. Silakan coba lagi.");
-            if (selectedDevice) {
-              await supabase
-                .from("devices")
-                .update({ status: "disconnected", qr_code: null, pairing_code: null })
-                .eq("id", selectedDevice.id);
-            }
-          }
-        }
-      }, 300000);
-
-    } catch (error: any) {
-      setConnectionStatus("error");
-      toast.error(error.message);
+  // Copy pairing code to clipboard
+  const copyPairingCode = () => {
+    if (pairingCode) {
+      navigator.clipboard.writeText(pairingCode);
+      toast.success('Pairing code copied to clipboard');
     }
   };
 
-  const handleRefreshQR = () => {
-    if (selectedDevice) {
-      // Clear existing polling
-      if (pollingInterval) {
-        clearInterval(pollingInterval);
-        setPollingInterval(null);
-      }
-      // Reconnect with same method
-      const method = selectedDevice.connection_method as 'qr' | 'pairing' || 'qr';
-      handleConnectDevice(selectedDevice, method, selectedDevice.phone_for_pairing || undefined);
+  // Disconnect device
+  const disconnectDevice = (deviceSessionId: string) => {
+    if (!socket) {
+      toast.error('Not connected to server');
+      return;
+    }
+
+    if (confirm('Are you sure you want to disconnect this device?')) {
+      socket.emit('disconnectDevice', { sessionId: deviceSessionId });
     }
   };
 
-  const handleCancelConnect = async () => {
-    if (!selectedDevice) return;
-    try {
-      if (pollingInterval) {
-        clearInterval(pollingInterval);
-        setPollingInterval(null);
-      }
-      await supabase
-        .from("devices")
-        .update({ status: "disconnected", qr_code: null, pairing_code: null, connection_method: null, phone_for_pairing: null })
-        .eq("id", selectedDevice.id);
-    } catch (e) {
-      console.error("Cancel connect error:", e);
-    } finally {
-      setConnectionStatus("idle");
-      setQrDialogOpen(false);
+  // Refresh devices list
+  const refreshDevices = () => {
+    if (!socket) {
+      toast.error('Not connected to server');
+      return;
     }
-  };
-
-  const handleStopConnecting = async (device: Device) => {
-    try {
-      await supabase
-        .from("devices")
-        .update({ status: "disconnected", qr_code: null, pairing_code: null, connection_method: null, phone_for_pairing: null })
-        .eq("id", device.id);
-      toast.success("Dibatalkan. Anda bisa scan ulang.");
-      fetchDevices();
-    } catch (e: any) {
-      toast.error(e.message);
-    }
-  };
-  const handleClearSession = async (device: Device) => {
-    if (!confirm("Yakin ingin menghapus session data? Device akan disconnect.")) return;
-
-    try {
-      await supabase
-        .from("devices")
-        .update({ 
-          session_data: null,
-          qr_code: null,
-          pairing_code: null,
-          status: "disconnected"
-        })
-        .eq("id", device.id);
-
-      toast.success("Session data berhasil dihapus");
-      fetchDevices();
-    } catch (error: any) {
-      toast.error(error.message);
-    }
-  };
-
-  const handleLogout = async (device: Device) => {
-    if (!confirm("Yakin ingin logout dari device ini?")) return;
-
-    try {
-      await supabase
-        .from("devices")
-        .update({ 
-          status: "disconnected",
-          phone_number: null,
-          qr_code: null
-        })
-        .eq("id", device.id);
-
-      toast.success("Device logged out successfully");
-      fetchDevices();
-    } catch (error: any) {
-      toast.error(error.message);
-    }
-  };
-
-  const handleDeleteDevice = async (deviceId: string) => {
-    if (!confirm("Yakin ingin menghapus device ini?")) return;
-
-    try {
-      const { error } = await supabase.from("devices").delete().eq("id", deviceId);
-      if (error) throw error;
-
-      toast.success("Device berhasil dihapus");
-      fetchDevices();
-    } catch (error: any) {
-      toast.error(error.message);
-    }
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success("Copied to clipboard!");
-  };
-
-  const handleRelog = (device: Device) => {
-    handleLogout(device);
-    setTimeout(() => handleConnectDevice(device), 1000);
-  };
-
-  const handleDetail = (device: Device) => {
-    setSelectedDevice(device);
-    setDetailDialogOpen(true);
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "connected":
-        return "bg-green-500 text-white";
-      case "connecting":
-        return "bg-yellow-500 text-white";
-      default:
-        return "bg-red-500 text-white";
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case "connected":
-        return "Terkoneksi";
-      case "connecting":
-        return "Connecting...";
-      default:
-        return "Tidak Terkoneksi";
-    }
+    
+    socket.emit('getDevices');
+    toast.success('Devices list refreshed');
   };
 
   return (
-    <Layout>
-      <div className="space-y-4 md:space-y-8">
-        <div className="flex flex-col gap-3">
-          <div>
-            <h1 className="text-2xl md:text-4xl font-bold text-foreground mb-1 md:mb-2">Device Management</h1>
-            <p className="text-sm md:text-base text-muted-foreground">
-              Kelola semua perangkat WhatsApp yang terhubung
-            </p>
-          </div>
-          <div className="flex gap-2 w-full">
-            <Button
-              variant={notificationsEnabled ? "default" : "outline"}
-              size="icon"
-              className="shrink-0"
-              onClick={async () => {
-                const granted = await requestNotificationPermission();
-                setNotificationsEnabled(granted);
-                if (granted) {
-                  toast.success("Notifikasi diaktifkan");
-                } else {
-                  toast.error("Notifikasi ditolak");
-                }
-              }}
-              title={notificationsEnabled ? "Notifikasi aktif" : "Aktifkan notifikasi"}
-            >
-              {notificationsEnabled ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
-            </Button>
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button 
-                  className="bg-gradient-to-r from-primary to-secondary text-white flex-1"
-                  disabled={isLimitReached('devices')}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  <span className="hidden sm:inline">Tambah Device</span>
-                  <span className="sm:hidden">Tambah</span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Tambah Device Baru</DialogTitle>
-                  <DialogDescription>
-                    Buat device baru untuk menghubungkan WhatsApp Anda
-                  </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleCreateDevice} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="deviceName">Nama Device</Label>
-                    <Input
-                      id="deviceName"
-                      value={deviceName}
-                      onChange={(e) => setDeviceName(e.target.value)}
-                      placeholder="Contoh: WhatsApp Bisnis 1"
-                      required
-                    />
-                  </div>
-                  <Button type="submit" className="w-full">Buat Device</Button>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
+    <div className="container mx-auto p-6 max-w-6xl">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold mb-2">WhatsApp Devices</h1>
+        <p className="text-gray-600">Manage your connected WhatsApp devices</p>
+      </div>
 
-        {isLimitReached('devices') && subscription && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Limit device tercapai ({devices.length}/{subscription.plan.max_devices}). 
-              Upgrade plan untuk menambah lebih banyak device.
-            </AlertDescription>
-          </Alert>
-        )}
+      {/* Connection Status */}
+      {connectionStatus && (
+        <Alert className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{connectionStatus}</AlertDescription>
+        </Alert>
+      )}
 
-        {loading ? (
-          <Card>
-            <CardContent className="p-6">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-4 border-b">
-                  <div className="h-6 bg-muted animate-pulse rounded w-32" />
-                  <div className="h-6 bg-muted animate-pulse rounded w-32" />
-                  <div className="h-6 bg-muted animate-pulse rounded w-24" />
-                  <div className="h-6 bg-muted animate-pulse rounded w-32" />
-                  <div className="h-6 bg-muted animate-pulse rounded w-24" />
-                  <div className="h-6 bg-muted animate-pulse rounded w-40" />
-                </div>
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="flex items-center justify-between py-4 border-b">
-                    <div className="h-10 bg-muted animate-pulse rounded w-32" />
-                    <div className="h-10 bg-muted animate-pulse rounded w-40" />
-                    <div className="h-10 bg-muted animate-pulse rounded w-24" />
-                    <div className="h-10 bg-muted animate-pulse rounded w-32" />
-                    <div className="h-10 bg-muted animate-pulse rounded w-24" />
-                    <div className="flex gap-2">
-                      <div className="h-10 w-24 bg-muted animate-pulse rounded" />
-                      <div className="h-10 w-24 bg-muted animate-pulse rounded" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        ) : devices.length === 0 ? (
-          <Card>
-            <CardContent className="text-center py-12">
-              <Smartphone className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-              <h3 className="text-xl font-semibold mb-2">Belum ada device</h3>
-              <p className="text-muted-foreground mb-4">
-                Mulai dengan menambahkan device WhatsApp pertama Anda
-              </p>
-              <Button onClick={() => setDialogOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Tambah Device Pertama
+      {/* Error Alert */}
+      {error && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Add New Device Card */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Add New Device</CardTitle>
+          <CardDescription>
+            Connect a new WhatsApp device using QR code or pairing code
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {/* Connection Method Selector */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium mb-2">Connection Method</label>
+            <div className="grid grid-cols-2 gap-4">
+              <Button
+                variant={connectionMethod === 'qr' ? 'default' : 'outline'}
+                onClick={() => setConnectionMethod('qr')}
+                className="flex items-center justify-center gap-2"
+              >
+                <QrCode className="h-4 w-4" />
+                QR Code
               </Button>
-            </CardContent>
-          </Card>
-        ) : (
-          <>
-            {/* Mobile View - Swipeable Cards */}
-            <div className="md:hidden space-y-3">
-              {devices.map((device) => (
-                <DeviceCard
-                  key={device.id}
-                  device={device}
-                  onConnect={handleConnectDevice}
-                  onDetail={handleDetail}
-                  onClearSession={handleClearSession}
-                  onRelog={handleRelog}
-                  onLogout={handleLogout}
-                  onDelete={handleDeleteDevice}
-                  onCopyApiKey={copyToClipboard}
-                  onStopConnecting={handleStopConnecting}
-                  getStatusColor={getStatusColor}
-                  getStatusText={getStatusText}
-                />
-              ))}
+              <Button
+                variant={connectionMethod === 'pairing' ? 'default' : 'outline'}
+                onClick={() => setConnectionMethod('pairing')}
+                className="flex items-center justify-center gap-2"
+              >
+                <Key className="h-4 w-4" />
+                Pairing Code
+              </Button>
             </div>
+          </div>
 
-            {/* Desktop View - Table */}
-            <Card className="hidden md:block">
-              <CardContent className="p-6">
-                <div className="overflow-x-auto">
-                  <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <TableHead className="font-semibold">Device</TableHead>
-                      <TableHead className="font-semibold">API Key</TableHead>
-                      <TableHead className="font-semibold">Server ID</TableHead>
-                      <TableHead className="font-semibold">Status</TableHead>
-                      <TableHead className="font-semibold">Webhook Media</TableHead>
-                      <TableHead className="text-right font-semibold">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {devices.map((device) => (
-                      <TableRow key={device.id} className="hover:bg-muted/30 transition-colors">
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <span className="font-medium">{device.device_name}</span>
-                            {device.is_multidevice && (
-                              <Badge className="bg-green-500 text-white w-fit text-xs">
-                                Multidevice
-                              </Badge>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
-                              {device.api_key?.substring(0, 10)}...
-                            </code>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 w-7 p-0"
-                              onClick={() => copyToClipboard(device.api_key || '')}
-                              title="Copy API Key"
-                            >
-                              <Copy className="w-3 h-3" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm font-mono">{device.server_id || '-'}</span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={getStatusColor(device.status)}>
-                            {getStatusText(device.status)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm text-muted-foreground truncate max-w-[150px] block">
-                            {device.webhook_url || '-'}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1.5 justify-end">
-                            {device.status === "disconnected" && (
-                              <Button
-                                size="sm"
-                                onClick={() => handleConnectDevice(device)}
-                                className="bg-blue-500 hover:bg-blue-600 text-white text-xs h-8"
-                              >
-                                <QrCode className="w-3 h-3 mr-1" />
-                                Scan QR
-                              </Button>
-                            )}
-                            {device.status === "connecting" && (
-                              <>
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleConnectDevice(device)}
-                                  className="bg-blue-500 hover:bg-blue-600 text-white text-xs h-8"
-                                  title="Scan ulang/lihat kode"
-                                >
-                                  <QrCode className="w-3 h-3 mr-1" />
-                                  Scan Ulang
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleStopConnecting(device)}
-                                  className="border-red-500 text-red-500 h-8"
-                                  title="Batalkan & putuskan"
-                                >
-                                  Batal
-                                </Button>
-                              </>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleDetail(device)}
-                              className="border-orange-500 text-orange-500 hover:bg-orange-50 h-8 w-8 p-0"
-                              title="Detail"
-                            >
-                              <Info className="w-3 h-3" />
-                            </Button>
-                            {device.status === "connected" && (
-                              <>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleClearSession(device)}
-                                  className="border-purple-500 text-purple-500 hover:bg-purple-50 h-8 w-8 p-0"
-                                  title="Clear Session"
-                                >
-                                  <Database className="w-3 h-3" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleRelog(device)}
-                                  className="border-pink-500 text-pink-500 hover:bg-pink-50 h-8 w-8 p-0"
-                                  title="Relog"
-                                >
-                                  <RotateCcw className="w-3 h-3" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleLogout(device)}
-                                  className="border-blue-500 text-blue-500 hover:bg-blue-50 h-8 w-8 p-0"
-                                  title="Logout"
-                                >
-                                  <LogOut className="w-3 h-3" />
-                                </Button>
-                              </>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => handleDeleteDevice(device.id)}
-                              className="bg-red-500 hover:bg-red-600 h-8 w-8 p-0"
-                              title="Hapus"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-          </>
-        )}
-
-        {/* Connection Dialog - QR or Pairing */}
-        <Dialog open={qrDialogOpen} onOpenChange={async (open) => {
-          setQrDialogOpen(open);
-          if (!open) {
-            if (connectionStatus !== "connected") {
-              await handleCancelConnect();
-              return; // handleCancelConnect will close and reset
-            }
-            setConnectionStatus("idle");
-            setPairingPhone('');
-            setConnectionMethod('qr');
-            if (pollingInterval) {
-              clearInterval(pollingInterval);
-              setPollingInterval(null);
-            }
-          }
-        }}>
-          <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-center text-lg sm:text-xl">
-                {connectionStatus === "connected" ? "✅ Berhasil Terhubung!" : 
-                 connectionStatus === "idle" ? "Pilih Metode Koneksi" :
-                 selectedDevice?.connection_method === 'pairing' ? "Kode Pairing" : "Scan QR Code"}
-              </DialogTitle>
-              <DialogDescription className="text-center text-sm">
-                {connectionStatus === "idle" && "Pilih cara menghubungkan WhatsApp"}
-                {connectionStatus === "connecting" && "Menghubungkan ke server..."}
-                {connectionStatus === "generating_qr" && "Membuat QR code..."}
-                {connectionStatus === "generating_pairing" && "Membuat kode pairing..."}
-                {connectionStatus === "qr_ready" && `QR code siap di-scan (${qrExpiry}s)`}
-                {connectionStatus === "pairing_ready" && "Masukkan kode ini di WhatsApp"}
-                {connectionStatus === "qr_expired" && "QR code expired"}
-                {connectionStatus === "pairing_expired" && "Kode pairing expired"}
-                {connectionStatus === "connected" && "WhatsApp berhasil terhubung!"}
-                {connectionStatus === "error" && "Terjadi kesalahan"}
-              </DialogDescription>
-            </DialogHeader>
-            
-            <div className="flex flex-col items-center justify-center p-3 sm:p-6 space-y-3 sm:space-y-4">
-              {connectionStatus === "idle" && (
-                <div className="space-y-3 sm:space-y-4 w-full">
-                  <div className="grid grid-cols-2 gap-2 sm:gap-3">
-                    <Button
-                      variant={connectionMethod === 'qr' ? 'default' : 'outline'}
-                      onClick={() => setConnectionMethod('qr')}
-                      className="h-20 sm:h-24 flex flex-col gap-1 sm:gap-2"
-                    >
-                      <QrCode className="w-6 h-6 sm:w-8 sm:h-8" />
-                      <span className="text-xs sm:text-sm">QR Code</span>
-                    </Button>
-                    <Button
-                      variant={connectionMethod === 'pairing' ? 'default' : 'outline'}
-                      onClick={() => setConnectionMethod('pairing')}
-                      className="h-20 sm:h-24 flex flex-col gap-1 sm:gap-2"
-                    >
-                      <Smartphone className="w-6 h-6 sm:w-8 sm:h-8" />
-                      <span className="text-xs sm:text-sm">Kode Pairing</span>
-                    </Button>
+          {/* QR Code Method */}
+          {connectionMethod === 'qr' && (
+            <div className="text-center">
+              {qrCode ? (
+                <div className="flex flex-col items-center">
+                  <div className="bg-white p-4 rounded-lg shadow-lg mb-4">
+                    <QRCodeSVG value={qrCode} size={256} />
                   </div>
-
-                   {connectionMethod === 'pairing' && (
-                    <div className="space-y-2">
-                      <Label htmlFor="pairingPhone" className="text-sm font-medium">Nomor WhatsApp</Label>
-                      <Input
-                        id="pairingPhone"
-                        type="tel"
-                        placeholder="62812345678"
-                        value={pairingPhone}
-                        onChange={(e) => setPairingPhone(e.target.value.replace(/\D/g, ''))}
-                        className="text-base h-11 font-mono"
-                      />
-                      <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-2.5 rounded-md">
-                        <p className="text-xs text-amber-800 dark:text-amber-200">
-                          <strong>Format:</strong> Nomor dengan kode negara (tanpa +)<br/>
-                          <strong>Contoh:</strong> 62812345678 untuk Indonesia
-                        </p>
-                      </div>
-                    </div>
+                  {qrExpiryTime > 0 && (
+                    <p className="text-sm text-gray-500 mb-2">
+                      QR code expires in {qrExpiryTime} seconds
+                    </p>
                   )}
-
-                  <Button 
-                    className="w-full text-sm sm:text-base" 
-                    onClick={() => {
-                      if (connectionMethod === 'pairing' && !pairingPhone) {
-                        toast.error('Masukkan nomor WhatsApp');
-                        return;
-                      }
-                      if (selectedDevice) {
-                        handleConnectDevice(selectedDevice, connectionMethod, pairingPhone || undefined);
-                      }
-                    }}
-                  >
-                    Hubungkan
-                  </Button>
-                </div>
-              )}
-
-              {connectionStatus === "connecting" && (
-                <div className="flex flex-col items-center gap-4">
-                  <RefreshCw className="w-12 h-12 animate-spin text-primary" />
-                  <p className="text-sm text-muted-foreground">Menghubungkan ke server WhatsApp...</p>
-                </div>
-              )}
-              
-              {connectionStatus === "generating_qr" && (
-                <div className="flex flex-col items-center gap-4">
-                  <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-                  <p className="text-sm text-muted-foreground">Membuat QR code...</p>
-                </div>
-              )}
-
-              {connectionStatus === "generating_pairing" && (
-                <div className="flex flex-col items-center gap-4">
-                  <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-                  <p className="text-sm text-muted-foreground">Membuat kode pairing...</p>
-                </div>
-              )}
-              
-              {(connectionStatus === "pairing_ready" || connectionStatus === "pairing_expired") && selectedDevice?.pairing_code && (
-                <div className="space-y-3 sm:space-y-4 w-full">
-                  <div className="relative bg-gradient-to-br from-primary/10 to-secondary/10 p-4 sm:p-6 md:p-8 rounded-xl sm:rounded-2xl shadow-lg mx-auto">
-                    <div className={`text-center ${connectionStatus === "pairing_expired" ? "opacity-30" : ""}`}>
-                      <p className="text-xs sm:text-sm text-muted-foreground mb-2 sm:mb-3">Kode Pairing Anda</p>
-                      <div className="flex flex-col items-center gap-2">
-                        <div className="text-3xl sm:text-4xl md:text-6xl font-bold tracking-[0.5em] sm:tracking-[0.75em] text-primary font-mono">
-                          {selectedDevice.pairing_code.replace(/(.{4})(?=.)/g, '$1-')}
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            copyToClipboard(selectedDevice.pairing_code);
-                            toast.success('Kode berhasil disalin!');
-                          }}
-                          className="text-xs"
-                        >
-                          <Copy className="w-3 h-3 mr-1" />
-                          Copy Kode
-                        </Button>
-                      </div>
-                    </div>
-                    {connectionStatus === "pairing_expired" && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="bg-red-500 text-white px-4 py-2 sm:px-6 sm:py-3 rounded-lg text-sm sm:text-base font-medium">
-                          Kode Expired
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                   <div className="bg-blue-50 dark:bg-blue-950 border-2 border-blue-200 dark:border-blue-800 p-3 sm:p-4 rounded-lg">
-                    <div className="flex items-start gap-2 mb-3">
-                      <AlertCircle className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-1">Penting!</p>
-                        <p className="text-xs text-blue-800 dark:text-blue-200">
-                          Pada mode Kode Pairing, <strong>TIDAK ada notifikasi otomatis</strong>. Buka WhatsApp secara manual.
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <p className="text-xs sm:text-sm font-medium mb-2">📱 Cara pairing:</p>
-                    <ol className="text-xs text-muted-foreground space-y-1.5">
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1.2rem]">1.</span>
-                        <span>Buka <strong>WhatsApp</strong> di ponsel Anda</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1.2rem]">2.</span>
-                        <span>Tap <strong>Menu (⋮)</strong> atau <strong>Settings (⚙️)</strong></span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1.2rem]">3.</span>
-                        <span>Pilih <strong>"Linked Devices"</strong></span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1.2rem]">4.</span>
-                        <span>Tap <strong>"Link a Device"</strong></span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1.2rem]">5.</span>
-                        <span>Pilih <strong>"Link with phone number instead"</strong></span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1.2rem]">6.</span>
-                        <span>Masukkan <strong>kode pairing</strong> yang ditampilkan di atas</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1.2rem]">7.</span>
-                        <span><strong className="text-green-600 dark:text-green-400">Tunggu sampai berhasil connect!</strong> (biasanya 10-30 detik)</span>
-                      </li>
-                    </ol>
-                  </div>
-                  
-                  <div className="flex items-center justify-center">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleRefreshQR}
-                      className="text-xs sm:text-sm"
-                    >
-                      <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
-                      Refresh Kode
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {(connectionStatus === "qr_ready" || connectionStatus === "qr_expired") && selectedDevice?.qr_code && (
-                <div className="space-y-3 sm:space-y-4 w-full">
-                  <div className="relative bg-white p-2 sm:p-3 md:p-4 rounded-lg shadow-inner mx-auto w-fit">
-                    <img
-                      src={selectedDevice.qr_code}
-                      alt="QR Code"
-                      className={`w-48 h-48 sm:w-56 sm:h-56 md:w-72 md:h-72 ${connectionStatus === "qr_expired" ? "opacity-30" : ""}`}
-                    />
-                    {connectionStatus === "qr_expired" && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="bg-red-500 text-white px-4 py-2 sm:px-6 sm:py-3 rounded-lg text-sm sm:text-base font-medium">
-                          QR Expired
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center justify-between px-2 sm:px-4 gap-2">
-                    <div className="flex items-center gap-1.5 sm:gap-2">
-                      <div className={`w-2 h-2 rounded-full ${qrExpiry > 10 ? "bg-green-500" : "bg-red-500"} animate-pulse`} />
-                      <span className="text-xs sm:text-sm font-medium">
-                        {connectionStatus === "qr_expired" ? "Expired" : `Berlaku ${qrExpiry} detik`}
-                      </span>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleRefreshQR}
-                      className="text-xs sm:text-sm"
-                    >
-                      <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-                      <span className="hidden sm:inline">Refresh QR</span>
-                      <span className="sm:hidden">Refresh</span>
-                    </Button>
-                  </div>
-                  
-                  <div className="bg-muted p-3 sm:p-4 rounded-lg">
-                    <p className="text-xs sm:text-sm font-medium mb-2 text-center">📱 Cara scan QR:</p>
-                    <ol className="text-xs text-muted-foreground space-y-1 sm:space-y-1.5">
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1rem]">1.</span>
-                        <span>Buka WhatsApp di ponsel Anda</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1rem]">2.</span>
-                        <span>Tap Menu (⋮) atau Settings (⚙️)</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1rem]">3.</span>
-                        <span>Pilih "Linked Devices"</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1rem]">4.</span>
-                        <span>Tap "Link a Device"</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1rem]">5.</span>
-                        <span>Arahkan kamera ke QR code di atas</span>
-                      </li>
-                    </ol>
-                  </div>
-                </div>
-              )}
-              
-              {connectionStatus === "connected" && (
-                <div className="flex flex-col items-center gap-3 sm:gap-4 py-4 sm:py-8">
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 bg-green-100 rounded-full flex items-center justify-center">
-                    <span className="text-4xl sm:text-5xl">✓</span>
-                  </div>
-                  <p className="text-base sm:text-lg font-medium text-green-600">WhatsApp Terhubung!</p>
-                  <p className="text-xs sm:text-sm text-muted-foreground text-center px-4">
-                    Device {selectedDevice?.device_name} berhasil terhubung
+                  <p className="text-sm text-gray-600">
+                    Scan this QR code with WhatsApp on your phone
                   </p>
+                  <ol className="text-left text-sm mt-4 space-y-1">
+                    <li>1. Open WhatsApp on your phone</li>
+                    <li>2. Go to Settings → Linked Devices</li>
+                    <li>3. Tap "Link a Device"</li>
+                    <li>4. Scan this QR code</li>
+                  </ol>
                 </div>
-              )}
-              
-              {connectionStatus === "error" && (
-                <div className="flex flex-col items-center gap-3 sm:gap-4 py-4 sm:py-8">
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 bg-red-100 rounded-full flex items-center justify-center">
-                    <span className="text-4xl sm:text-5xl">✕</span>
-                  </div>
-                  <p className="text-base sm:text-lg font-medium text-red-600">Connection Error</p>
-                  <Button onClick={handleRefreshQR} size="sm" className="text-xs sm:text-sm">
-                    <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
-                    Coba Lagi
+              ) : (
+                <div>
+                  <Button
+                    onClick={requestQRCode}
+                    disabled={isConnecting}
+                    className="mb-4"
+                  >
+                    {isConnecting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <QrCode className="mr-2 h-4 w-4" />
+                        Generate QR Code
+                      </>
+                    )}
                   </Button>
-                </div>
-              )}
-
-              {connectionStatus !== "connected" && connectionStatus !== "idle" && (
-                <div className="flex items-center justify-center gap-2 sm:gap-3 pt-2">
-                  <Button variant="outline" size="sm" onClick={handleCancelConnect} className="text-xs sm:text-sm">
-                    Batal
-                  </Button>
-                  {(connectionStatus === "qr_ready" || connectionStatus === "qr_expired" || connectionStatus === "pairing_ready" || connectionStatus === "pairing_expired" || connectionStatus === "error") && (
-                    <Button onClick={handleRefreshQR} size="sm" className="text-xs sm:text-sm">
-                      <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-                      {selectedDevice?.connection_method === 'pairing' ? 'Refresh Kode' : 'Refresh QR'}
-                    </Button>
-                  )}
                 </div>
               )}
             </div>
-          </DialogContent>
-        </Dialog>
+          )}
 
-        {/* Detail Dialog */}
-        <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-          <DialogContent className="sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Smartphone className="w-5 h-5" />
-                Device Details
-              </DialogTitle>
-              <DialogDescription>
-                Informasi lengkap dan action untuk device WhatsApp
-              </DialogDescription>
-            </DialogHeader>
-            {selectedDevice && (
-              <div className="space-y-6">
-                {/* Info Grid */}
-                <div className="grid grid-cols-2 gap-4 p-4 bg-muted/30 rounded-lg">
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Device Name</Label>
-                    <p className="font-medium text-sm mt-1">{selectedDevice.device_name}</p>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Status</Label>
-                    <div className="mt-1">
-                      <Badge className={getStatusColor(selectedDevice.status)}>
-                        {getStatusText(selectedDevice.status)}
-                      </Badge>
-                    </div>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Phone Number</Label>
-                    <p className="font-medium text-sm mt-1">{selectedDevice.phone_number || '-'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Server ID</Label>
-                    <p className="font-mono text-sm mt-1">{selectedDevice.server_id || '-'}</p>
-                  </div>
-                  {selectedDevice.last_connected_at && (
-                    <div className="col-span-2">
-                      <Label className="text-xs text-muted-foreground">Last Connected</Label>
-                      <p className="text-sm mt-1">
-                        {new Date(selectedDevice.last_connected_at).toLocaleString('id-ID', {
-                          dateStyle: 'full',
-                          timeStyle: 'short'
-                        })}
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* API Key Section */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-semibold">API Key</Label>
-                  <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-                    <code className="text-xs font-mono flex-1 break-all">
-                      {selectedDevice.api_key}
-                    </code>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => copyToClipboard(selectedDevice.api_key || '')}
-                      className="shrink-0"
+          {/* Pairing Code Method */}
+          {connectionMethod === 'pairing' && (
+            <div>
+              {!pairingCode ? (
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    <Select
+                      value={countryCode}
+                      onValueChange={setCountryCode}
                     >
-                      <Copy className="w-4 h-4" />
-                    </Button>
+                      <SelectTrigger className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="62">+62 (ID)</SelectItem>
+                        <SelectItem value="1">+1 (US)</SelectItem>
+                        <SelectItem value="44">+44 (UK)</SelectItem>
+                        <SelectItem value="91">+91 (IN)</SelectItem>
+                        <SelectItem value="60">+60 (MY)</SelectItem>
+                        <SelectItem value="65">+65 (SG)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="tel"
+                      placeholder="Phone number (without country code)"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      className="flex-1"
+                    />
                   </div>
-                </div>
-
-                {/* Quick Actions */}
-                <div className="space-y-3">
-                  <Label className="text-sm font-semibold">Quick Actions</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {selectedDevice.status === "disconnected" && (
-                      <Button
-                        onClick={() => {
-                          setDetailDialogOpen(false);
-                          handleConnectDevice(selectedDevice);
-                        }}
-                        className="bg-blue-500 hover:bg-blue-600"
-                      >
-                        <QrCode className="w-4 h-4 mr-2" />
-                        Scan QR Code
-                      </Button>
-                    )}
-                    {selectedDevice.status === "connecting" && (
+                  <p className="text-xs text-gray-500">
+                    Enter your phone number without the country code. Example: 81234567890
+                  </p>
+                  <Button
+                    onClick={requestPairingCode}
+                    disabled={isConnecting || !phoneNumber}
+                    className="w-full"
+                  >
+                    {isConnecting ? (
                       <>
-                        <Button
-                          onClick={() => {
-                            setDetailDialogOpen(false);
-                            handleConnectDevice(selectedDevice);
-                          }}
-                          className="bg-blue-500 hover:bg-blue-600"
-                        >
-                          <QrCode className="w-4 h-4 mr-2" />
-                          Scan Ulang
-                        </Button>
-                        <Button
-                          onClick={() => handleStopConnecting(selectedDevice)}
-                          variant="outline"
-                          className="border-red-500 text-red-500 hover:bg-red-50"
-                        >
-                          Batal
-                        </Button>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Requesting...
+                      </>
+                    ) : (
+                      <>
+                        <Key className="mr-2 h-4 w-4" />
+                        Get Pairing Code
                       </>
                     )}
-                    {selectedDevice.status === "connected" && (
-                      <>
-                        <Button
-                          onClick={() => {
-                            setDetailDialogOpen(false);
-                            handleClearSession(selectedDevice);
-                          }}
-                          variant="outline"
-                          className="border-purple-500 text-purple-500 hover:bg-purple-50"
-                        >
-                          <Database className="w-4 h-4 mr-2" />
-                          Clear Session
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            setDetailDialogOpen(false);
-                            handleRelog(selectedDevice);
-                          }}
-                          variant="outline"
-                          className="border-pink-500 text-pink-500 hover:bg-pink-50"
-                        >
-                          <RotateCcw className="w-4 h-4 mr-2" />
-                          Reconnect
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            setDetailDialogOpen(false);
-                            handleLogout(selectedDevice);
-                          }}
-                          variant="outline"
-                          className="border-blue-500 text-blue-500 hover:bg-blue-50"
-                        >
-                          <LogOut className="w-4 h-4 mr-2" />
-                          Logout
-                        </Button>
-                      </>
-                    )}
-                    <Button
-                      onClick={() => {
-                        setDetailDialogOpen(false);
-                        handleDeleteDevice(selectedDevice.id);
-                      }}
-                      variant="destructive"
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Delete Device
-                    </Button>
-                  </div>
+                  </Button>
                 </div>
-
-                {/* Additional Info */}
-                {selectedDevice.is_multidevice && (
-                  <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                    <p className="text-sm text-green-700 dark:text-green-300">
-                      ✓ Device ini mendukung Multi-device WhatsApp
+              ) : (
+                <div className="text-center">
+                  <div className="bg-gray-100 rounded-lg p-6 mb-4">
+                    <p className="text-3xl font-mono font-bold tracking-wider">
+                      {pairingCode}
                     </p>
                   </div>
-                )}
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
-      </div>
-    </Layout>
+                  <Button
+                    variant="outline"
+                    onClick={copyPairingCode}
+                    className="mb-4"
+                  >
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copy Code
+                  </Button>
+                  <p className="text-sm text-gray-600">
+                    Enter this code in WhatsApp on your phone:
+                  </p>
+                  <ol className="text-left text-sm mt-4 space-y-1">
+                    <li>1. Open WhatsApp on your phone</li>
+                    <li>2. Go to Settings → Linked Devices</li>
+                    <li>3. Tap "Link a Device"</li>
+                    <li>4. Tap "Link with phone number instead"</li>
+                    <li>5. Enter the code above</li>
+                  </ol>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Connected Devices */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Connected Devices</CardTitle>
+            <CardDescription>
+              {devices.length} device{devices.length !== 1 ? 's' : ''} connected
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={refreshDevices}
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {devices.length > 0 ? (
+            <div className="space-y-4">
+              {devices.map((device) => (
+                <div
+                  key={device.sessionId}
+                  className="flex items-center justify-between p-4 border rounded-lg"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="p-2 bg-green-100 rounded-full">
+                      <Smartphone className="h-6 w-6 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold">{device.name}</p>
+                      <p className="text-sm text-gray-500">
+                        {device.phoneNumber} • {device.platform}
+                      </p>
+                      {device.connectedAt && (
+                        <p className="text-xs text-gray-400">
+                          Connected: {new Date(device.connectedAt).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                      <span className="text-sm text-green-600">Active</span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => disconnectDevice(device.sessionId)}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <Smartphone className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>No devices connected</p>
+              <p className="text-sm mt-1">Add a device to get started</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 
