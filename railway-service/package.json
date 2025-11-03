@@ -4,8 +4,8 @@
   "description": "WhatsApp Baileys integration service for Railway",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "build": "npm install",
+    "start": "node index-stable.js"
+  },
     "postinstall": "echo 'Dependencies installed successfully'"
   },
   "dependencies": {
