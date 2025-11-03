@@ -57,11 +57,32 @@ class StablePairing {
           throw new Error('Socket not ready');
         }
 
-        // Request code from WhatsApp
-        pairingCode = await sock.requestPairingCode(phoneNumber);
+        // Request code from WhatsApp - it returns a string directly
+        const codeResponse = await sock.requestPairingCode(phoneNumber);
         
-        if (!pairingCode) {
-          throw new Error('No code received from WhatsApp');
+        // Debug: Log the raw response
+        console.log(`[${deviceName}] Raw pairing response:`, typeof codeResponse, codeResponse);
+        
+        // Extract the actual code string
+        if (typeof codeResponse === 'string') {
+          pairingCode = codeResponse;
+        } else if (codeResponse && typeof codeResponse === 'object') {
+          // If it's an object, log its structure
+          console.log(`[${deviceName}] Response object keys:`, Object.keys(codeResponse));
+          // Try to extract the code from known properties
+          pairingCode = codeResponse.code || codeResponse.pairingCode || codeResponse.match || null;
+          if (!pairingCode && codeResponse.toString && codeResponse.toString() !== '[object Object]') {
+            pairingCode = codeResponse.toString();
+          }
+        } else {
+          pairingCode = String(codeResponse);
+        }
+        
+        console.log(`[${deviceName}] Extracted pairing code:`, pairingCode);
+        
+        if (!pairingCode || pairingCode === 'undefined' || pairingCode === '[object Object]') {
+          console.error(`[${deviceName}] Invalid response structure:`, codeResponse);
+          throw new Error('Invalid code format received from WhatsApp');
         }
 
       } catch (error) {
