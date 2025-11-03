@@ -11,7 +11,10 @@ const redis = require('./redis-client');
 
 // Import handlers for QR and Pairing code
 const { handleQRCode } = require('./qr-handler');
-const { handlePairingCode, handlePairingCodeV2 } = require('./pairing-handler-v2');
+const PairingHandler = require('./pairing-enhanced');
+
+// Initialize pairing handler
+const pairingHandler = new PairingHandler(redis);
 
 // Supabase config dari environment variables
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -250,13 +253,17 @@ async function connectWhatsApp(device, isRecovery = false) {
       version,
       auth: state,
       printQRInTerminal: false, // We'll handle QR ourselves
-      browser: Browsers.ubuntu('Chrome'), // Use official browser config
+      browser: Browsers.macOS('Chrome'), // Use macOS Chrome for better pairing support
       connectTimeoutMs: 60_000,
       keepAliveIntervalMs: 10_000,
       syncFullHistory: false,
       markOnlineOnConnect: true,
       generateHighQualityLinkPreview: false,
       getMessage: async () => null, // Disable message retry
+      // Enable mobile pairing
+      mobile: false,
+      // Auth timeout for pairing
+      authTimeoutMs: 60_000,
       patchMessageBeforeSending: (message) => {
         const requiresPatch = !!(
           message.buttonsMessage ||
@@ -330,35 +337,38 @@ async function connectWhatsApp(device, isRecovery = false) {
             if (readyToRequest && !pairingAttempted) {
               console.log('🔐 Attempting pairing code generation...');
               
-              // Get fresh device data for phone number
-              const { data: deviceData } = await supabase
-                .from('devices')
-                .select('phone_for_pairing')
-                .eq('id', device.id)
-                .single();
+              // Use enhanced pairing handler
+              const result = await pairingHandler.generatePairingCode(sock, device, supabase);
+              pairingAttempted = true; // Mark as attempted regardless of result
               
-              if (deviceData?.phone_for_pairing) {
-                // Use improved V2 handler
-                const result = await handlePairingCodeV2(sock, device, supabase);
-                pairingAttempted = true; // Mark as attempted regardless of result
+              if (result?.success) {
+                pairingCodeRequested = { 
+                  timestamp: Date.now(),
+                  code: result.formattedCode 
+                };
+                console.log('✅ Pairing code ready for WhatsApp notification');
                 
-                if (result?.handled) {
-                  pairingCodeRequested = { timestamp: result.timestamp };
-                  console.log('✅ Pairing code generated successfully');
-                  
-                  // Set up listener for successful pairing
-                  sock.ev.on('connection.update', async (update) => {
-                    if (update.isNewLogin) {
-                      console.log('✅ Pairing successful - new login detected');
+                // Don't generate QR when pairing is successful
+                return;
+              } else {
+                console.log(`⚠️ Pairing failed: ${result.reason}`);
+                if (result.reason === 'socket_not_ready') {
+                  // Retry after delay
+                  pairingAttempted = false;
+                  setTimeout(async () => {
+                    if (!sock.authState?.creds?.registered) {
+                      console.log('🔄 Retrying pairing...');
+                      const retry = await pairingHandler.generatePairingCode(sock, device, supabase);
+                      if (retry?.success) {
+                        pairingCodeRequested = { 
+                          timestamp: Date.now(),
+                          code: retry.formattedCode 
+                        };
+                      }
                     }
-                  });
-                  
-                  // Don't generate QR when pairing is successful
-                  return;
-                } else {
-                  console.log('⚠️ Pairing code generation failed');
-                  // Continue to allow potential QR fallback
+                  }, 3000);
                 }
+                // Continue to allow potential QR fallback if configured
               }
             }
           }
