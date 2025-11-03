@@ -95,7 +95,16 @@ async function startService() {
           // Check if we have valid session data for recovery
           const hasSessionData = device.session_data?.creds?.registered;
           
-          if (device.status === 'connected' && hasSessionData) {
+          // For pairing mode, always clear session data
+          if (device.connection_method === 'pairing' && device.status === 'connecting') {
+            console.log(`🧹 Clearing session for pairing: ${device.device_name}`);
+            await supabase.from('devices').update({ 
+              session_data: null,
+              qr_code: null,
+              pairing_code: null 
+            }).eq('id', device.id);
+            await connectWhatsApp(device);
+          } else if (device.status === 'connected' && hasSessionData) {
             // Railway restart detected - try to recover session
             console.log(`🔄 Recovering session for: ${device.device_name} (Railway restart detected)`);
             await connectWhatsApp(device, true); // Pass recovery flag
@@ -122,21 +131,44 @@ async function startService() {
         }
       }
 
-      // Disconnect devices that should be disconnected
+      // Disconnect devices that should be disconnected or need reset for pairing
       for (const [deviceId, sock] of activeSockets) {
         const device = devices?.find(d => d.id === deviceId);
-        if (!device || device.status === 'disconnected') {
-          console.log(`❌ Disconnecting device: ${deviceId}`);
+        
+        // Check if device needs reset for new pairing
+        const needsReset = device && 
+          device.status === 'connecting' && 
+          device.connection_method === 'pairing' &&
+          !sock.authState?.creds?.registered &&
+          !sock.pairingInProgress;
+        
+        if (!device || device.status === 'disconnected' || needsReset) {
+          if (needsReset) {
+            console.log(`🔄 Resetting socket for new pairing: ${device.device_name}`);
+          } else {
+            console.log(`❌ Disconnecting device: ${deviceId}`);
+          }
           sock?.end();
           activeSockets.delete(deviceId);
           // Clean auth on explicit disconnect
           try {
             // Filesystem auth removed. Clear session in DB on explicit disconnect
             if (device) {
-              await supabase.from('devices').update({ qr_code: null, session_data: null }).eq('id', deviceId);
+              await supabase.from('devices').update({ 
+                qr_code: null, 
+                session_data: null,
+                pairing_code: null 
+              }).eq('id', deviceId);
             }
           } catch (e) {
             console.error('❌ Error cleaning auth on disconnect:', e);
+          }
+          
+          // Reconnect if it was a reset for pairing
+          if (needsReset) {
+            setTimeout(() => {
+              connectWhatsApp(device).catch(() => {});
+            }, 1000);
           }
         }
       }
@@ -325,6 +357,9 @@ async function connectWhatsApp(device, isRecovery = false) {
             if (connection === 'connecting' || qr) {
               console.log('🔐 Attempting pairing code generation...');
               pairingAttempted = true;
+              
+              // Clear pairing handler cache for fresh attempt
+              pairingHandler.clearPairing(device.id);
               
               const pairingCode = await pairingHandler.generatePairingCode(sock, device, supabase);
               

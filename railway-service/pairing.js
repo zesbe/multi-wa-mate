@@ -15,6 +15,14 @@ class WhatsAppPairing {
   async generatePairingCode(sock, device, supabase) {
     try {
       console.log('📱 Starting pairing process for:', device.device_name);
+      
+      // IMPORTANT: Clear any existing auth state to allow new pairing
+      if (sock.authState?.creds?.registered) {
+        console.log('⚠️ Clearing existing auth state for new pairing');
+        sock.authState.creds.registered = false;
+        sock.authState.creds.account = null;
+        sock.authState.creds.me = null;
+      }
 
       // Step 1: Get device configuration
       const { data: config } = await supabase
@@ -47,8 +55,17 @@ class WhatsAppPairing {
       console.log('🔐 Requesting pairing code for:', phoneNumber);
       
       try {
+        // Add delay to ensure socket is ready
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Mark socket as pairing in progress
+        sock.pairingInProgress = true;
+        
         // Request the pairing code
         const pairingCode = await sock.requestPairingCode(phoneNumber);
+        
+        // Clear flag after successful request
+        sock.pairingInProgress = false;
         
         if (!pairingCode) {
           throw new Error('No pairing code received from WhatsApp');
@@ -94,6 +111,8 @@ class WhatsAppPairing {
         // Handle specific errors
         if (error.message?.includes('rate') || error.status === 428) {
           await this.setError(supabase, device.id, 'Too many attempts. Please wait 1 minute.');
+        } else if (error.message?.includes('already') || error.message?.includes('registered')) {
+          await this.setError(supabase, device.id, 'Device already registered. Please disconnect first.');
         } else {
           await this.setError(supabase, device.id, error.message || 'Failed to generate code');
         }
