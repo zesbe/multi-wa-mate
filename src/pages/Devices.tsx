@@ -107,12 +107,15 @@ export const Devices = () => {
             }
           }
           
-          // Auto-close dialog when connected
+          // Auto-close dialog when connected (but not if pairing code is shown)
           if (payload.eventType === 'UPDATE' && payload.new?.status === 'connected') {
-            setTimeout(() => {
-              setQrDialogOpen(false);
-              setConnectionStatus("idle");
-            }, 1500);
+            // Only auto-close if not showing pairing code
+            if (connectionStatus !== 'pairing_ready') {
+              setTimeout(() => {
+                setQrDialogOpen(false);
+                setConnectionStatus("idle");
+              }, 1500);
+            }
           }
         }
       )
@@ -757,6 +760,12 @@ export const Devices = () => {
 
         {/* Connection Dialog - QR or Pairing */}
         <Dialog open={qrDialogOpen} onOpenChange={async (open) => {
+          // Prevent closing if pairing code is active
+          if (!open && connectionStatus === 'pairing_ready') {
+            toast.info('Gunakan tombol Batal untuk menutup dialog');
+            return;
+          }
+          
           setQrDialogOpen(open);
           if (!open) {
             if (connectionStatus !== "connected") {
@@ -772,7 +781,12 @@ export const Devices = () => {
             }
           }
         }}>
-          <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-[95vw] sm:max-w-xl md:max-w-2xl max-h-[95vh] overflow-y-auto" onPointerDownOutside={(e) => {
+            // Prevent closing when clicking outside if pairing code is shown
+            if (connectionStatus === 'pairing_ready' || connectionStatus === 'qr_ready') {
+              e.preventDefault();
+            }
+          }}>
             <DialogHeader>
               <DialogTitle className="text-center text-lg sm:text-xl">
                 {connectionStatus === "connected" ? "✅ Berhasil Terhubung!" : 
@@ -875,86 +889,117 @@ export const Devices = () => {
               
               {(connectionStatus === "pairing_ready" || connectionStatus === "pairing_expired") && selectedDevice?.pairing_code && (
                 <div className="space-y-3 sm:space-y-4 w-full">
-                  <div className="relative bg-gradient-to-br from-primary/10 to-secondary/10 p-4 sm:p-6 md:p-8 rounded-xl sm:rounded-2xl shadow-lg mx-auto">
-                    <div className={`text-center ${connectionStatus === "pairing_expired" ? "opacity-30" : ""}`}>
-                      <p className="text-xs sm:text-sm text-muted-foreground mb-2 sm:mb-3">Kode Pairing Anda</p>
-                      <div className="flex flex-col items-center gap-2">
-                        <div className="text-3xl sm:text-4xl md:text-6xl font-bold tracking-[0.5em] sm:tracking-[0.75em] text-primary font-mono">
-                          {selectedDevice.pairing_code.replace(/(.{4})(?=.)/g, '$1-')}
+                  {/* Pairing Code Display Card */}
+                  <div className="relative bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 p-4 sm:p-6 rounded-xl border-2 border-green-200 dark:border-green-800">
+                    <div className={`${connectionStatus === "pairing_expired" ? "opacity-30" : ""}`}>
+                      <p className="text-sm sm:text-base font-semibold text-center mb-3 sm:mb-4 text-green-800 dark:text-green-200">
+                        Kode Pairing Anda
+                      </p>
+                      
+                      {/* Code Display */}
+                      <div className="bg-white dark:bg-gray-900 rounded-lg p-3 sm:p-4 shadow-inner">
+                        <div className="flex flex-col items-center gap-3">
+                          {/* Large Code Display */}
+                          <div className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 dark:text-gray-100 font-mono tracking-[0.2em] sm:tracking-[0.3em] select-all">
+                            {selectedDevice.pairing_code.match(/.{1,4}/g)?.map((chunk, idx) => (
+                              <span key={idx}>
+                                {idx > 0 && <span className="text-gray-400 dark:text-gray-600 mx-1 sm:mx-2">-</span>}
+                                <span className="text-green-600 dark:text-green-400">{chunk}</span>
+                              </span>
+                            ))}
+                          </div>
+                          
+                          {/* Copy Button */}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              copyToClipboard(selectedDevice.pairing_code);
+                              toast.success('Kode berhasil disalin!');
+                            }}
+                            className="border-green-500 text-green-600 hover:bg-green-50 dark:hover:bg-green-950"
+                          >
+                            <Copy className="w-3 h-3 mr-1.5" />
+                            Copy Kode
+                          </Button>
                         </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            copyToClipboard(selectedDevice.pairing_code);
-                            toast.success('Kode berhasil disalin!');
-                          }}
-                          className="text-xs"
-                        >
-                          <Copy className="w-3 h-3 mr-1" />
-                          Copy Kode
-                        </Button>
                       </div>
+                      
+                      {/* Timer/Status */}
+                      {connectionStatus === "pairing_ready" && (
+                        <div className="mt-3 text-center">
+                          <p className="text-xs text-green-600 dark:text-green-400 font-medium">
+                            ✓ Kode aktif dan siap digunakan
+                          </p>
+                        </div>
+                      )}
                     </div>
+                    
+                    {/* Expired Overlay */}
                     {connectionStatus === "pairing_expired" && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="bg-red-500 text-white px-4 py-2 sm:px-6 sm:py-3 rounded-lg text-sm sm:text-base font-medium">
+                      <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-red-500/10">
+                        <div className="bg-red-500 text-white px-6 py-3 rounded-lg font-medium shadow-lg">
                           Kode Expired
                         </div>
                       </div>
                     )}
                   </div>
                   
-                   <div className="bg-blue-50 dark:bg-blue-950 border-2 border-blue-200 dark:border-blue-800 p-3 sm:p-4 rounded-lg">
-                    <div className="flex items-start gap-2 mb-3">
-                      <AlertCircle className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-1">Penting!</p>
-                        <p className="text-xs text-blue-800 dark:text-blue-200">
-                          Pada mode Kode Pairing, <strong>TIDAK ada notifikasi otomatis</strong>. Buka WhatsApp secara manual.
-                        </p>
-                      </div>
+                  {/* Instructions Card */}
+                  <div className="bg-gradient-to-b from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800 p-4 rounded-lg">
+                    {/* Alert */}
+                    <div className="flex items-center gap-2 mb-4 p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg border border-amber-300 dark:border-amber-700">
+                      <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <p className="text-xs font-medium text-amber-800 dark:text-amber-200">
+                        Tidak ada notifikasi otomatis. Buka WhatsApp manual.
+                      </p>
                     </div>
                     
-                    <p className="text-xs sm:text-sm font-medium mb-2">📱 Cara pairing:</p>
-                    <ol className="text-xs text-muted-foreground space-y-1.5">
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1.2rem]">1.</span>
-                        <span>Buka <strong>WhatsApp</strong> di ponsel Anda</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1.2rem]">2.</span>
-                        <span>Tap <strong>Menu (⋮)</strong> atau <strong>Settings (⚙️)</strong></span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1.2rem]">3.</span>
-                        <span>Pilih <strong>"Linked Devices"</strong></span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1.2rem]">4.</span>
-                        <span>Tap <strong>"Link a Device"</strong></span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1.2rem]">5.</span>
-                        <span>Pilih <strong>"Link with phone number instead"</strong></span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1.2rem]">6.</span>
-                        <span>Masukkan <strong>kode pairing</strong> yang ditampilkan di atas</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="font-bold text-primary min-w-[1.2rem]">7.</span>
-                        <span><strong className="text-green-600 dark:text-green-400">Tunggu sampai berhasil connect!</strong> (biasanya 10-30 detik)</span>
-                      </li>
-                    </ol>
+                    {/* Steps */}
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2">
+                        📱 Langkah-langkah:
+                      </p>
+                      
+                      <div className="grid gap-2">
+                        {[
+                          { icon: "📱", text: "Buka WhatsApp di HP" },
+                          { icon: "⚙️", text: "Tap Menu/Settings" },
+                          { icon: "🔗", text: 'Pilih "Linked Devices"' },
+                          { icon: "➕", text: 'Tap "Link a Device"' },
+                          { icon: "🔢", text: 'Pilih "Link with phone number"' },
+                          { icon: "✏️", text: "Masukkan kode 8 digit" },
+                          { icon: "✅", text: "Tunggu 10-30 detik", highlight: true }
+                        ].map((step, idx) => (
+                          <div key={idx} className="flex items-center gap-2.5 p-2 bg-white/50 dark:bg-gray-900/50 rounded-lg hover:bg-white/80 dark:hover:bg-gray-900/80 transition-colors">
+                            <div className="w-7 h-7 flex items-center justify-center bg-blue-500 text-white rounded-full text-xs font-bold shrink-0">
+                              {idx + 1}
+                            </div>
+                            <span className="text-xs">{step.icon}</span>
+                            <span className={`text-xs ${step.highlight ? 'font-semibold text-green-600 dark:text-green-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                              {step.text}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                   
-                  <div className="flex items-center justify-center">
+                  {/* Action Buttons */}
+                  <div className="flex items-center justify-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={handleCancelConnect}
+                      className="text-xs sm:text-sm border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
+                      Batal
+                    </Button>
+                    <Button
+                      variant="default"
+                      size="sm"
                       onClick={handleRefreshQR}
-                      className="text-xs sm:text-sm"
+                      className="text-xs sm:text-sm bg-green-600 hover:bg-green-700 text-white"
                     >
                       <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
                       Refresh Kode
