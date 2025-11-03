@@ -11,7 +11,7 @@ const redis = require('./redis-client');
 
 // Import handlers for QR and Pairing code
 const { handleQRCode } = require('./qr-handler');
-const { handlePairingCode } = require('./pairing-handler');
+const { handlePairingCode, handlePairingCodeV2 } = require('./pairing-handler-v2');
 
 // Supabase config dari environment variables
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -250,7 +250,7 @@ async function connectWhatsApp(device, isRecovery = false) {
       version,
       auth: state,
       printQRInTerminal: false, // We'll handle QR ourselves
-      browser: ['HalloWa', 'Chrome', '120.0.0'], // Custom browser name for WhatsApp
+      browser: Browsers.ubuntu('Chrome'), // Use official browser config
       connectTimeoutMs: 60_000,
       keepAliveIntervalMs: 10_000,
       syncFullHistory: false,
@@ -338,12 +338,21 @@ async function connectWhatsApp(device, isRecovery = false) {
                 .single();
               
               if (deviceData?.phone_for_pairing) {
-                const result = await handlePairingCode(sock, device, supabase, true, pairingCodeRequested);
+                // Use improved V2 handler
+                const result = await handlePairingCodeV2(sock, device, supabase);
                 pairingAttempted = true; // Mark as attempted regardless of result
                 
                 if (result?.handled) {
                   pairingCodeRequested = { timestamp: result.timestamp };
                   console.log('✅ Pairing code generated successfully');
+                  
+                  // Set up listener for successful pairing
+                  sock.ev.on('connection.update', async (update) => {
+                    if (update.isNewLogin) {
+                      console.log('✅ Pairing successful - new login detected');
+                    }
+                  });
+                  
                   // Don't generate QR when pairing is successful
                   return;
                 } else {

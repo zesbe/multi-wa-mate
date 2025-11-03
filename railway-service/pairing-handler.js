@@ -97,9 +97,9 @@ async function handlePairingCode(sock, device, supabase, readyToRequest, pairing
     // Auto-cleanup after 60 seconds
     setTimeout(() => pairingRequestTracker.delete(device.id), 60000);
 
-    // Wait for socket to stabilize
-    console.log('⏳ Waiting for connection to stabilize...');
-    await new Promise(r => setTimeout(r, 1500 + (retryCount * 500)));
+  // Wait for socket to stabilize - longer initial wait
+  console.log('⏳ Waiting for connection to stabilize...');
+  await new Promise(r => setTimeout(r, 2000 + (retryCount * 1000)));
 
     try {
       // Skip WebSocket check - Baileys doesn't expose ws directly
@@ -119,7 +119,7 @@ async function handlePairingCode(sock, device, supabase, readyToRequest, pairing
       // Request pairing code with timeout
       const codePromise = sock.requestPairingCode(e164);
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Pairing code request timeout')), 15000)
+        setTimeout(() => reject(new Error('Pairing code request timeout')), 30000) // Increased timeout to 30s
       );
       
       const code = await Promise.race([codePromise, timeoutPromise]);
@@ -139,20 +139,26 @@ async function handlePairingCode(sock, device, supabase, readyToRequest, pairing
         console.error('❌ Failed to store pairing code in Redis');
       }
       
-      // Update database status
+      // Update database with pairing code directly (backup to Redis)
       await supabase
         .from('devices')
         .update({ 
           status: 'connecting',
+          pairing_code: code, // Store code in DB as backup
           updated_at: new Date().toISOString()
         })
         .eq('id', device.id);
       
       console.log('📱 Pairing code ready for user input');
-      console.log('Instructions: WhatsApp > Linked Devices > Link with phone number');
+      console.log('Instructions:');
+      console.log('1. Open WhatsApp on your phone');
+      console.log('2. Go to Settings > Linked Devices');
+      console.log('3. Tap "Link with phone number instead"');
+      console.log(`4. Enter phone: ${e164}`);
+      console.log(`5. Enter code: ${code}`);
       
-      // Schedule auto-refresh after 8 minutes
-      scheduleCodeRefresh(sock, device, supabase, e164);
+      // Don't schedule auto-refresh - let user complete pairing
+      // scheduleCodeRefresh(sock, device, supabase, e164);
       
       return { handled: true, timestamp };
       
