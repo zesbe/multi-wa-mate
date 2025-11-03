@@ -250,7 +250,7 @@ async function connectWhatsApp(device, isRecovery = false) {
       version,
       auth: state,
       printQRInTerminal: false, // We'll handle QR ourselves
-      browser: Browsers.ubuntu('Chrome'), // Use standard browser config
+      browser: ['HalloWa', 'Chrome', '120.0.0'], // Custom browser name for WhatsApp
       connectTimeoutMs: 60_000,
       keepAliveIntervalMs: 10_000,
       syncFullHistory: false,

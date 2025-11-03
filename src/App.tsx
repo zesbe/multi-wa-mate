@@ -11,7 +11,7 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Auth from "./pages/Auth";
 import AdminLogin from "./pages/AdminLogin";
-import Dashboard from "./pages/Dashboard";
+import { DashboardEnterprise as Dashboard } from "./pages/DashboardEnterprise";
 import Devices from "./pages/Devices";
 import Broadcast from "./pages/Broadcast";
 import Scheduled from "./pages/Scheduled";
