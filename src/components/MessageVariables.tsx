@@ -21,7 +21,7 @@ export const MessageVariables = ({ onInsert }: MessageVariablesProps) => {
         },
         { 
           syntax: "{nama}", 
-          description: "Nama kontak dari database",
+          description: "Nama kontak dari Supabase database",
           example: "Terima kasih {nama}",
           color: "bg-green-500"
         },
@@ -38,19 +38,19 @@ export const MessageVariables = ({ onInsert }: MessageVariablesProps) => {
       items: [
         { 
           syntax: "{var1}", 
-          description: "Variabel custom 1",
+          description: "Variabel custom 1 dari Supabase (per kontak)",
           example: "Kode promo: {var1}",
           color: "bg-orange-500"
         },
         { 
           syntax: "{var2}", 
-          description: "Variabel custom 2",
+          description: "Variabel custom 2 dari Supabase (per kontak)",
           example: "Produk: {var2}",
           color: "bg-orange-500"
         },
         { 
           syntax: "{var3}", 
-          description: "Variabel custom 3",
+          description: "Variabel custom 3 dari Supabase (per kontak)",
           example: "Tanggal: {var3}",
           color: "bg-orange-500"
         },
@@ -165,7 +165,8 @@ export const MessageVariables = ({ onInsert }: MessageVariablesProps) => {
               <ul className="space-y-1 list-disc list-inside">
                 <li>Klik pada badge untuk insert ke pesan</li>
                 <li>Gunakan (opsi1|opsi2) untuk text random</li>
-                <li>Variable akan diganti otomatis saat kirim</li>
+                <li>Variable akan diganti otomatis dari data Supabase</li>
+                <li>{"{nama}"}, {"{var1}"}, {"{var2}"}, {"{var3}"} diambil dari tabel contacts</li>
                 <li>Kombinasikan multiple variable untuk personalisasi maksimal</li>
               </ul>
             </div>

@@ -1,6 +1,12 @@
 interface Contact {
   name?: string;
   phone_number: string;
+  var1?: string;
+  var2?: string;
+  var3?: string;
+  birthday?: string;
+  tags?: string[];
+  [key: string]: any;
 }
 
 interface VariableData {
@@ -30,19 +36,34 @@ export const processMessageVariables = (
   // Replace [[NAME]] with WhatsApp contact name (or phone if name not available)
   processed = processed.replace(/\[\[NAME\]\]/g, contact.name || contact.phone_number);
 
-  // Replace {nama} and {{nama}} with contact name from database
+  // Replace {nama} and {{nama}} with contact name from Supabase database
   processed = processed.replace(/\{\{?nama\}\}?/g, contact.name || contact.phone_number);
 
   // Replace {nomor} with phone number
   processed = processed.replace(/\{nomor\}/g, contact.phone_number);
 
-  // Replace custom variables {var1}, {var2}, {var3}
+  // Replace custom variables from Supabase contact data FIRST (priority)
+  // {var1}, {var2}, {var3} dari database kontak di Supabase
+  if (contact.var1) {
+    processed = processed.replace(/\{var1\}/g, contact.var1);
+  }
+  if (contact.var2) {
+    processed = processed.replace(/\{var2\}/g, contact.var2);
+  }
+  if (contact.var3) {
+    processed = processed.replace(/\{var3\}/g, contact.var3);
+  }
+
+  // Then use variableData as fallback if contact doesn't have the var fields
   if (variableData) {
     Object.keys(variableData).forEach((key) => {
       const value = variableData[key];
       if (value) {
         const regex = new RegExp(`\\{${key}\\}`, 'g');
-        processed = processed.replace(regex, value);
+        // Only replace if not already replaced by contact data
+        if (processed.includes(`{${key}}`)) {
+          processed = processed.replace(regex, value);
+        }
       }
     });
   }
