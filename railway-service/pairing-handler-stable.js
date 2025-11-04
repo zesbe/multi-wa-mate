@@ -1,6 +1,6 @@
 /**
- * Stable Pairing Handler
- * Simplified and reliable pairing code implementation
+ * Stable Pairing Handler - FIXED VERSION
+ * Perbaikan untuk masalah pairing code yang hanya bisa digunakan sekali
  */
 
 const redis = require('./redis-client');
@@ -8,24 +8,43 @@ const redis = require('./redis-client');
 class StablePairingHandler {
   constructor() {
     this.activeSessions = new Map();
+    this.lastPairingAttempt = new Map(); // Track last attempt per device
+    this.pairingCooldown = 30000; // 30 seconds cooldown between attempts
   }
 
   /**
-   * Generate pairing code
+   * Generate pairing code dengan perbaikan
    */
   async generatePairingCode(sock, device, supabase) {
     const deviceId = device.id;
     const deviceName = device.device_name || 'Unknown';
     
     try {
-      // Check if already has active session
-      if (this.hasActiveSession(deviceId)) {
-        console.log(`⏱️ [${deviceName}] Already has active pairing session`);
+      // Check cooldown instead of blocking completely
+      if (this.isInCooldown(deviceId)) {
+        const remainingTime = this.getRemainingCooldown(deviceId);
+        console.log(`⏱️ [${deviceName}] Cooldown aktif. Tunggu ${Math.ceil(remainingTime/1000)} detik`);
+        
+        // Update error message in database
+        await this.storePairingError(
+          deviceId, 
+          `Tunggu ${Math.ceil(remainingTime/1000)} detik untuk mencoba lagi`, 
+          supabase
+        );
         return false;
       }
       
-      // Mark session as active
-      this.activeSessions.set(deviceId, Date.now());
+      // Clear any existing session for fresh start
+      this.clearDevice(deviceId);
+      
+      // Mark new session
+      this.activeSessions.set(deviceId, {
+        startTime: Date.now(),
+        status: 'generating'
+      });
+      
+      // Set last attempt time
+      this.lastPairingAttempt.set(deviceId, Date.now());
       
       // Get phone number
       const { data, error } = await supabase
@@ -36,7 +55,7 @@ class StablePairingHandler {
         
       if (error || !data || data.connection_method !== 'pairing' || !data.phone_for_pairing) {
         console.log(`❌ [${deviceName}] No pairing phone configured`);
-        this.activeSessions.delete(deviceId);
+        this.clearDevice(deviceId);
         return false;
       }
       
@@ -44,55 +63,97 @@ class StablePairingHandler {
       const phone = this.formatPhoneNumber(data.phone_for_pairing);
       if (!phone) {
         console.error(`❌ [${deviceName}] Invalid phone format: ${data.phone_for_pairing}`);
-        this.activeSessions.delete(deviceId);
+        this.clearDevice(deviceId);
         return false;
       }
       
-      console.log(`📱 [${deviceName}] Requesting pairing code for: ${phone}`);
+      console.log(`📱 [${deviceName}] Requesting pairing code untuk: ${phone}`);
       
       // Wait for socket to be ready
       await this.waitForSocket(sock, 3000);
       
-      // Request pairing code
+      // Update session status
+      const session = this.activeSessions.get(deviceId);
+      if (session) {
+        session.status = 'requesting';
+      }
+      
+      // Request pairing code dengan retry logic
       let pairingCode;
-      try {
-        // Use proper timeout
-        const codePromise = sock.requestPairingCode(phone);
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout')), 20000)
-        );
-        
-        pairingCode = await Promise.race([codePromise, timeoutPromise]);
-        
-      } catch (err) {
-        console.error(`❌ [${deviceName}] Failed to get pairing code:`, err.message);
-        
-        // Handle rate limit
-        if (err.message?.includes('rate') || err.output?.statusCode === 429) {
-          await this.storePairingError(deviceId, 'Rate limited. Wait 60 seconds.', supabase);
-        } else {
-          await this.storePairingError(deviceId, err.message || 'Failed to generate code', supabase);
+      let retryCount = 0;
+      const maxRetries = 2;
+      
+      while (retryCount <= maxRetries && !pairingCode) {
+        try {
+          if (retryCount > 0) {
+            console.log(`🔄 [${deviceName}] Retry ${retryCount}/${maxRetries}...`);
+            await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3s between retries
+          }
+          
+          // Request dengan timeout yang reasonable
+          const codePromise = sock.requestPairingCode(phone);
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout')), 15000) // 15 seconds timeout
+          );
+          
+          pairingCode = await Promise.race([codePromise, timeoutPromise]);
+          
+          if (pairingCode) break;
+          
+        } catch (err) {
+          console.error(`❌ [${deviceName}] Attempt ${retryCount + 1} failed:`, err.message);
+          
+          // Handle specific errors
+          if (err.message?.includes('rate') || err.output?.statusCode === 429) {
+            // Rate limit - need longer cooldown
+            this.lastPairingAttempt.set(deviceId, Date.now());
+            this.pairingCooldown = 60000; // Increase to 60s for rate limit
+            
+            await this.storePairingError(
+              deviceId, 
+              'Rate limited. Tunggu 60 detik sebelum mencoba lagi.', 
+              supabase
+            );
+            
+            this.clearDevice(deviceId);
+            return false;
+          }
+          
+          retryCount++;
+          
+          if (retryCount > maxRetries) {
+            await this.storePairingError(
+              deviceId, 
+              `Gagal setelah ${maxRetries} percobaan: ${err.message}`, 
+              supabase
+            );
+            this.clearDevice(deviceId);
+            return false;
+          }
         }
-        
-        // Cleanup and allow retry after delay
-        setTimeout(() => this.activeSessions.delete(deviceId), 60000);
-        return false;
       }
       
       // Validate and format code
       if (!pairingCode) {
-        console.error(`❌ [${deviceName}] No pairing code received`);
-        this.activeSessions.delete(deviceId);
+        console.error(`❌ [${deviceName}] No pairing code received after retries`);
+        await this.storePairingError(deviceId, 'Tidak ada kode yang diterima', supabase);
+        this.clearDevice(deviceId);
         return false;
       }
       
       // Format the code properly
       const formattedCode = this.formatPairingCode(pairingCode);
-      console.log(`✅ [${deviceName}] Pairing code: ${formattedCode}`);
+      console.log(`✅ [${deviceName}] Pairing code berhasil: ${formattedCode}`);
       
-      // Store in Redis
+      // Update session status
+      if (session) {
+        session.status = 'code_received';
+        session.code = formattedCode;
+      }
+      
+      // Store in Redis dengan TTL lebih pendek
       try {
-        await redis.setPairingCode(deviceId, formattedCode, 600); // 10 min TTL
+        await redis.setPairingCode(deviceId, formattedCode, 300); // 5 min TTL
         console.log(`📦 [${deviceName}] Code stored in Redis`);
       } catch (err) {
         console.error(`❌ [${deviceName}] Redis error:`, err);
@@ -112,36 +173,84 @@ class StablePairingHandler {
       // Print instructions
       this.printInstructions(deviceName, phone, formattedCode);
       
-      // Auto cleanup after 2 minutes
+      // Set shorter auto cleanup - 90 seconds
       setTimeout(() => {
-        this.activeSessions.delete(deviceId);
-        console.log(`🧹 [${deviceName}] Pairing session cleared`);
-      }, 120000);
+        const currentSession = this.activeSessions.get(deviceId);
+        if (currentSession && currentSession.code === formattedCode) {
+          this.clearDevice(deviceId);
+          console.log(`🧹 [${deviceName}] Pairing session auto-cleared after 90s`);
+        }
+      }, 90000);
       
       return true;
       
     } catch (error) {
       console.error(`❌ [${deviceName}] Unexpected error:`, error);
-      this.activeSessions.delete(deviceId);
+      this.clearDevice(deviceId);
       return false;
     }
   }
 
   /**
-   * Check if device has active session
+   * Check if device is in cooldown period
+   */
+  isInCooldown(deviceId) {
+    const lastAttempt = this.lastPairingAttempt.get(deviceId);
+    if (!lastAttempt) return false;
+    
+    const elapsed = Date.now() - lastAttempt;
+    return elapsed < this.pairingCooldown;
+  }
+  
+  /**
+   * Get remaining cooldown time
+   */
+  getRemainingCooldown(deviceId) {
+    const lastAttempt = this.lastPairingAttempt.get(deviceId);
+    if (!lastAttempt) return 0;
+    
+    const elapsed = Date.now() - lastAttempt;
+    const remaining = this.pairingCooldown - elapsed;
+    
+    return Math.max(0, remaining);
+  }
+
+  /**
+   * Check if device has active session (UPDATED)
    */
   hasActiveSession(deviceId) {
     const session = this.activeSessions.get(deviceId);
     if (!session) return false;
     
-    // Session expires after 60 seconds
-    const age = Date.now() - session;
-    if (age > 60000) {
-      this.activeSessions.delete(deviceId);
+    // Session expires after 90 seconds (reduced from 120)
+    const age = Date.now() - session.startTime;
+    if (age > 90000) {
+      this.clearDevice(deviceId);
       return false;
     }
     
-    return true;
+    // Check if session is in valid state
+    return session.status === 'generating' || session.status === 'requesting';
+  }
+  
+  /**
+   * Handle successful pairing - IMPORTANT!
+   */
+  onPairingSuccess(deviceId) {
+    console.log(`✅ Pairing successful for device ${deviceId}`);
+    this.clearDevice(deviceId);
+    // Reset cooldown on success
+    this.lastPairingAttempt.delete(deviceId);
+    this.pairingCooldown = 30000; // Reset to default
+  }
+  
+  /**
+   * Handle pairing failure
+   */
+  onPairingFailure(deviceId) {
+    console.log(`❌ Pairing failed for device ${deviceId}`);
+    this.clearDevice(deviceId);
+    // Keep cooldown on failure
   }
 
   /**
@@ -234,12 +343,13 @@ class StablePairingHandler {
     console.log(`📞 PHONE: ${phone}`);
     console.log(`🔑 CODE: ${code}`);
     console.log('='.repeat(50));
-    console.log('Instructions:');
-    console.log('1. Open WhatsApp on phone number above');
-    console.log('2. Go to Settings → Linked Devices');
-    console.log('3. Tap "Link a Device"');
-    console.log('4. Select "Link with phone number"'); 
-    console.log('5. Enter the code above');
+    console.log('📋 Instruksi:');
+    console.log('1. Buka WhatsApp di nomor telepon di atas');
+    console.log('2. Masuk ke Pengaturan → Perangkat Tertaut');
+    console.log('3. Klik "Tautkan Perangkat"');
+    console.log('4. Pilih "Tautkan dengan nomor telepon"'); 
+    console.log('5. Masukkan kode di atas');
+    console.log('⏰ Kode berlaku selama 5 menit');
     console.log('='.repeat(50) + '\n');
   }
 
@@ -249,18 +359,39 @@ class StablePairingHandler {
   clearAll() {
     const count = this.activeSessions.size;
     this.activeSessions.clear();
+    this.lastPairingAttempt.clear();
+    this.pairingCooldown = 30000; // Reset to default
     if (count > 0) {
       console.log(`🧹 Cleared ${count} pairing sessions`);
     }
   }
 
   /**
-   * Clear specific device session
+   * Clear specific device session (UPDATED)
    */
   clearDevice(deviceId) {
-    if (this.activeSessions.delete(deviceId)) {
+    const deleted = this.activeSessions.delete(deviceId);
+    if (deleted) {
       console.log(`🧹 Cleared pairing session for device: ${deviceId}`);
     }
+    return deleted;
+  }
+  
+  /**
+   * Get session info (for debugging)
+   */
+  getSessionInfo(deviceId) {
+    const session = this.activeSessions.get(deviceId);
+    const lastAttempt = this.lastPairingAttempt.get(deviceId);
+    
+    return {
+      hasSession: !!session,
+      sessionStatus: session?.status,
+      sessionAge: session ? Date.now() - session.startTime : null,
+      inCooldown: this.isInCooldown(deviceId),
+      cooldownRemaining: this.getRemainingCooldown(deviceId),
+      lastAttempt: lastAttempt ? new Date(lastAttempt).toISOString() : null
+    };
   }
 }
 
