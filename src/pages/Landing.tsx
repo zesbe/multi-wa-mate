@@ -11,13 +11,22 @@ import {
   CheckCircle2,
   ArrowRight
 } from "lucide-react";
+import AOS from 'aos';
+import 'aos/dist/aos.css';
 
 const Landing = () => {
   const navigate = useNavigate();
   const [isReady, setIsReady] = useState(false);
 
-  // Ensure page is ready before showing content
+  // Initialize AOS animations
   useEffect(() => {
+    AOS.init({
+      duration: 800, // Animation duration (ms)
+      easing: 'ease-in-out', // Easing function
+      once: true, // Animation happens only once
+      offset: 100, // Offset from viewport
+      delay: 0, // Delay animation
+    });
     setIsReady(true);
   }, []);
 
@@ -71,7 +80,7 @@ const Landing = () => {
     <div className="min-h-screen bg-gradient-to-b from-green-50 to-white dark:from-gray-900 dark:to-gray-800">
       {/* Hero Section */}
       <header className="container mx-auto px-4 py-8">
-        <nav className="flex justify-between items-center mb-16">
+        <nav className="flex justify-between items-center mb-16" data-aos="fade-down">
           <div className="flex items-center gap-2">
             <MessageSquare className="w-8 h-8 text-green-600" />
             <span className="text-2xl font-bold text-gray-900 dark:text-white">HalloWa</span>
@@ -87,14 +96,25 @@ const Landing = () => {
         </nav>
 
         <div className="text-center max-w-4xl mx-auto mb-16">
-          <h1 className="text-5xl md:text-6xl font-bold text-gray-900 dark:text-white mb-6">
+          <h1 
+            className="text-5xl md:text-6xl font-bold text-gray-900 dark:text-white mb-6"
+            data-aos="fade-up"
+          >
             WhatsApp Bot Marketing Platform
           </h1>
-          <p className="text-xl text-gray-600 dark:text-gray-300 mb-8">
+          <p 
+            className="text-xl text-gray-600 dark:text-gray-300 mb-8"
+            data-aos="fade-up"
+            data-aos-delay="100"
+          >
             Platform WhatsApp Bot Marketing profesional untuk kelola multiple devices, 
             broadcast messages, chatbot automation dalam satu platform terpadu
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <div 
+            className="flex flex-col sm:flex-row gap-4 justify-center"
+            data-aos="fade-up"
+            data-aos-delay="200"
+          >
             <Button 
               size="lg" 
               onClick={() => navigate("/auth")}
@@ -116,7 +136,7 @@ const Landing = () => {
 
       {/* Features Section */}
       <section className="container mx-auto px-4 py-16">
-        <div className="text-center mb-12">
+        <div className="text-center mb-12" data-aos="fade-up">
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
             Fitur Lengkap untuk Marketing Anda
           </h2>
@@ -130,6 +150,8 @@ const Landing = () => {
             <div 
               key={index}
               className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow"
+              data-aos="fade-up"
+              data-aos-delay={index * 100}
             >
               <div className="w-12 h-12 bg-green-100 dark:bg-green-900 rounded-lg flex items-center justify-center mb-4 text-green-600 dark:text-green-400">
                 {feature.icon}
@@ -149,12 +171,20 @@ const Landing = () => {
       <section className="bg-green-600 dark:bg-green-700 py-16">
         <div className="container mx-auto px-4">
           <div className="max-w-3xl mx-auto text-center">
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-8">
+            <h2 
+              className="text-3xl md:text-4xl font-bold text-white mb-8"
+              data-aos="fade-up"
+            >
               Kenapa Pilih HalloWa?
             </h2>
             <div className="grid md:grid-cols-2 gap-4 text-left">
               {benefits.map((benefit, index) => (
-                <div key={index} className="flex items-center gap-3 text-white">
+                <div 
+                  key={index} 
+                  className="flex items-center gap-3 text-white"
+                  data-aos="fade-right"
+                  data-aos-delay={index * 50}
+                >
                   <CheckCircle2 className="w-6 h-6 flex-shrink-0" />
                   <span className="text-lg">{benefit}</span>
                 </div>
@@ -166,23 +196,32 @@ const Landing = () => {
 
       {/* CTA Section */}
       <section className="container mx-auto px-4 py-16 text-center">
-        <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+        <h2 
+          className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4"
+          data-aos="zoom-in"
+        >
           Siap Untuk Meningkatkan Marketing Anda?
         </h2>
-        <p className="text-xl text-gray-600 dark:text-gray-300 mb-8 max-w-2xl mx-auto">
+        <p 
+          className="text-xl text-gray-600 dark:text-gray-300 mb-8 max-w-2xl mx-auto"
+          data-aos="zoom-in"
+          data-aos-delay="100"
+        >
           Bergabung dengan ribuan bisnis yang sudah menggunakan HalloWa untuk WhatsApp Marketing
         </p>
         <Button 
           size="lg"
           onClick={() => navigate("/auth")}
           className="bg-green-600 hover:bg-green-700 text-lg px-8"
+          data-aos="zoom-in"
+          data-aos-delay="200"
         >
           Mulai Gratis Sekarang <ArrowRight className="ml-2 w-5 h-5" />
         </Button>
       </section>
 
       {/* Footer */}
-      <footer className="bg-gray-900 text-white py-8">
+      <footer className="bg-gray-900 text-white py-8" data-aos="fade-up">
         <div className="container mx-auto px-4 text-center">
           <p className="text-gray-400">
             © 2024 HalloWa. All rights reserved.
