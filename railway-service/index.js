@@ -8,9 +8,9 @@ const { default: makeWASocket, DisconnectReason, fetchLatestBaileysVersion, Brow
 const { createClient } = require('@supabase/supabase-js');
 const os = require('os');
 
-// Import handlers for QR and Pairing code
+// Import handlers
 const { handleQRCode } = require('./qr-handler');
-const realPairingHandler = require('./pairing-real');
+const { connectWithPairingCode } = require('./connect-pairing');
 
 // Supabase config dari environment variables
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -88,15 +88,25 @@ async function startService() {
         
         if (!sock) {
           // No socket exists, create new connection
-          // Check if we have valid session data for recovery
+          const isPairingMode = device.connection_method === 'pairing' && device.phone_for_pairing;
           const hasSessionData = device.session_data?.creds?.registered;
-          
+
           if (device.status === 'connected' && hasSessionData) {
             // Railway restart detected - try to recover session
-            console.log(`🔄 Recovering session for: ${device.device_name} (Railway restart detected)`);
-            await connectWhatsApp(device, true); // Pass recovery flag
+            console.log(`🔄 Recovering session for: ${device.device_name}`);
+            await connectWhatsApp(device, true);
+          } else if (isPairingMode && device.status === 'connecting') {
+            // PAIRING MODE - Use simple pairing function
+            console.log(`🔐 PAIRING MODE: ${device.device_name}`);
+            try {
+              const sock = await connectWithPairingCode(device, supabase);
+              activeSockets.set(device.id, sock);
+            } catch (err) {
+              console.error(`❌ Pairing failed for ${device.device_name}:`, err.message);
+            }
           } else {
-            console.log(`🔄 Connecting device: ${device.device_name} [status=${device.status}]`);
+            // QR MODE
+            console.log(`📷 QR MODE: ${device.device_name}`);
             await connectWhatsApp(device);
           }
         } else if (device.status === 'connected' && !sock.user) {
