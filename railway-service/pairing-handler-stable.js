@@ -11,94 +11,128 @@ class StablePairingHandler {
   }
 
   /**
-   * Generate pairing code
+   * Generate pairing code with retry mechanism
    */
   async generatePairingCode(sock, device, supabase) {
     const deviceId = device.id;
     const deviceName = device.device_name || 'Unknown';
-    
+
     try {
       // Check if already has active session
       if (this.hasActiveSession(deviceId)) {
         console.log(`⏱️ [${deviceName}] Already has active pairing session`);
         return false;
       }
-      
+
       // Mark session as active
       this.activeSessions.set(deviceId, Date.now());
-      
+
       // Get phone number
       const { data, error } = await supabase
         .from('devices')
         .select('phone_for_pairing, connection_method')
         .eq('id', deviceId)
         .single();
-        
+
       if (error || !data || data.connection_method !== 'pairing' || !data.phone_for_pairing) {
         console.log(`❌ [${deviceName}] No pairing phone configured`);
         this.activeSessions.delete(deviceId);
         return false;
       }
-      
+
       // Format phone number
       const phone = this.formatPhoneNumber(data.phone_for_pairing);
       if (!phone) {
         console.error(`❌ [${deviceName}] Invalid phone format: ${data.phone_for_pairing}`);
         this.activeSessions.delete(deviceId);
+        await this.storePairingError(deviceId, `Invalid phone format: ${data.phone_for_pairing}`, supabase);
         return false;
       }
-      
+
       console.log(`📱 [${deviceName}] Requesting pairing code for: ${phone}`);
-      
-      // Wait for socket to be ready
-      await this.waitForSocket(sock, 3000);
-      
-      // Request pairing code
-      let pairingCode;
-      try {
-        // Use proper timeout
-        const codePromise = sock.requestPairingCode(phone);
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout')), 20000)
-        );
-        
-        pairingCode = await Promise.race([codePromise, timeoutPromise]);
-        
-      } catch (err) {
-        console.error(`❌ [${deviceName}] Failed to get pairing code:`, err.message);
-        
-        // Handle rate limit
-        if (err.message?.includes('rate') || err.output?.statusCode === 429) {
-          await this.storePairingError(deviceId, 'Rate limited. Wait 60 seconds.', supabase);
-        } else {
-          await this.storePairingError(deviceId, err.message || 'Failed to generate code', supabase);
-        }
-        
-        // Cleanup and allow retry after delay
-        setTimeout(() => this.activeSessions.delete(deviceId), 60000);
-        return false;
-      }
-      
-      // Validate and format code
-      if (!pairingCode) {
-        console.error(`❌ [${deviceName}] No pairing code received`);
+
+      // Wait for socket to be ready with proper state check
+      const isReady = await this.waitForSocket(sock, 10000);
+      if (!isReady) {
+        console.error(`❌ [${deviceName}] Socket not ready after 10 seconds`);
         this.activeSessions.delete(deviceId);
+        await this.storePairingError(deviceId, 'Socket not ready for pairing', supabase);
         return false;
       }
-      
+
+      // Request pairing code with retry mechanism
+      let pairingCode;
+      const maxRetries = 3;
+      let lastError = null;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`🔐 [${deviceName}] Attempt ${attempt}/${maxRetries} to get pairing code...`);
+
+          // Add small delay between retries
+          if (attempt > 1) {
+            await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+          }
+
+          // Request pairing code with timeout
+          const codePromise = sock.requestPairingCode(phone);
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Request timeout after 30 seconds')), 30000)
+          );
+
+          pairingCode = await Promise.race([codePromise, timeoutPromise]);
+
+          // Success!
+          if (pairingCode) {
+            console.log(`✅ [${deviceName}] Got pairing code on attempt ${attempt}`);
+            break;
+          }
+
+        } catch (err) {
+          lastError = err;
+          console.error(`❌ [${deviceName}] Attempt ${attempt} failed:`, err.message);
+
+          // Handle rate limit - stop retrying
+          if (err.message?.includes('rate') || err.message?.includes('429') || err.output?.statusCode === 429) {
+            console.log(`🚫 [${deviceName}] Rate limited by WhatsApp`);
+            await this.storePairingError(deviceId, 'Rate limited. Please wait 60 seconds and try again.', supabase);
+            setTimeout(() => this.activeSessions.delete(deviceId), 60000);
+            return false;
+          }
+
+          // If last attempt, give up
+          if (attempt === maxRetries) {
+            console.error(`❌ [${deviceName}] All ${maxRetries} attempts failed`);
+            const errorMsg = err.message || 'Failed to generate pairing code';
+            await this.storePairingError(deviceId, errorMsg, supabase);
+            this.activeSessions.delete(deviceId);
+            return false;
+          }
+        }
+      }
+
+      // Validate pairing code
+      if (!pairingCode) {
+        console.error(`❌ [${deviceName}] No pairing code received after ${maxRetries} attempts`);
+        this.activeSessions.delete(deviceId);
+        await this.storePairingError(deviceId, lastError?.message || 'No pairing code received', supabase);
+        return false;
+      }
+
       // Format the code properly
       const formattedCode = this.formatPairingCode(pairingCode);
       console.log(`✅ [${deviceName}] Pairing code: ${formattedCode}`);
-      
-      // Store in Redis
+
+      // Store in Redis (optional cache)
       try {
         await redis.setPairingCode(deviceId, formattedCode, 600); // 10 min TTL
-        console.log(`📦 [${deviceName}] Code stored in Redis`);
+        console.log(`📦 [${deviceName}] Code cached in Redis`);
       } catch (err) {
-        console.error(`❌ [${deviceName}] Redis error:`, err);
+        // Redis error is not critical since we store in Supabase
+        console.warn(`⚠️ [${deviceName}] Redis cache failed (non-critical):`, err.message);
       }
-      
-      // Update database
+
+      // Update database - this is the primary storage
       await supabase
         .from('devices')
         .update({
@@ -108,21 +142,24 @@ class StablePairingHandler {
           updated_at: new Date().toISOString()
         })
         .eq('id', deviceId);
-      
+
+      console.log(`✅ [${deviceName}] Pairing code saved to database`);
+
       // Print instructions
       this.printInstructions(deviceName, phone, formattedCode);
-      
-      // Auto cleanup after 2 minutes
+
+      // Auto cleanup after 10 minutes (pairing code expires)
       setTimeout(() => {
         this.activeSessions.delete(deviceId);
-        console.log(`🧹 [${deviceName}] Pairing session cleared`);
-      }, 120000);
-      
+        console.log(`🧹 [${deviceName}] Pairing session cleared (timeout)`);
+      }, 600000);
+
       return true;
-      
+
     } catch (error) {
       console.error(`❌ [${deviceName}] Unexpected error:`, error);
       this.activeSessions.delete(deviceId);
+      await this.storePairingError(deviceId, error.message || 'Unexpected error', supabase);
       return false;
     }
   }
@@ -189,21 +226,55 @@ class StablePairingHandler {
   }
 
   /**
-   * Wait for socket to be ready
+   * Wait for socket to be ready with proper state checks
    */
-  async waitForSocket(sock, maxWait = 5000) {
+  async waitForSocket(sock, maxWait = 10000) {
     const start = Date.now();
-    
+
+    console.log('⏳ Waiting for socket to be ready...');
+
     while (Date.now() - start < maxWait) {
-      if (sock && typeof sock.requestPairingCode === 'function') {
-        // Socket is ready
-        return true;
+      try {
+        // Check if socket exists
+        if (!sock) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          continue;
+        }
+
+        // Check if requestPairingCode method exists
+        if (typeof sock.requestPairingCode !== 'function') {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          continue;
+        }
+
+        // Check websocket connection state
+        // WebSocket.OPEN = 1 means connection is ready
+        if (sock.ws && sock.ws.readyState === 1) {
+          console.log('✅ Socket is ready (WebSocket OPEN)');
+          return true;
+        }
+
+        // Check alternative: if auth state has creds
+        if (sock.authState && sock.authState.creds) {
+          console.log('✅ Socket is ready (Auth state available)');
+          return true;
+        }
+
+        // Log current state for debugging
+        const wsState = sock.ws?.readyState;
+        const wsStateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+        console.log(`⏳ Socket state: WebSocket=${wsStateNames[wsState] || 'N/A'}, waiting...`);
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+      } catch (err) {
+        console.log('⚠️ Error checking socket state:', err.message);
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
     }
-    
-    throw new Error('Socket not ready');
+
+    console.error('❌ Socket not ready after timeout');
+    return false;
   }
 
   /**
