@@ -101,32 +101,49 @@ class PairingConnectionManager {
       sock.deviceId = deviceId;
       console.log(`✅ [Pairing-Manager] Socket created and stored`);
 
-      // Request pairing code IMMEDIATELY (before connection established)
-      if (!hasValidSession && !isRecovery) {
-        console.log(`🔐 [Pairing-Manager] Requesting pairing code immediately...`);
-
-        // Small delay to let socket initialize
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        const result = await simplePairingHandler.generatePairingCode(
-          sock,
-          device,
-          this.supabase
-        );
-
-        if (result) {
-          console.log(`✅ [Pairing-Manager] Pairing code generated successfully`);
-        } else {
-          console.error(`❌ [Pairing-Manager] Pairing code generation failed`);
-        }
-      }
-
-      // Setup event handlers
+      // Setup event handlers first
       this.setupConnectionHandlers(sock, device, saveCreds, isRecovery, hasValidSession);
       this.setupCredentialsHandler(sock, saveCreds, deviceName);
       this.setupMessagesHandler(sock, deviceName);
 
       console.log(`✅ [Pairing-Manager] Event handlers registered`);
+
+      // Request pairing code after event handlers are set up
+      // This ensures we don't miss any connection events
+      if (!hasValidSession && !isRecovery) {
+        console.log(`🔐 [Pairing-Manager] Requesting pairing code...`);
+
+        // Use setTimeout to run after event loop processes connection.update
+        setTimeout(async () => {
+          try {
+            const result = await simplePairingHandler.generatePairingCode(
+              sock,
+              device,
+              this.supabase
+            );
+
+            if (result) {
+              console.log(`✅ [Pairing-Manager] Pairing code generated successfully`);
+            } else {
+              console.error(`❌ [Pairing-Manager] Pairing code generation failed`);
+
+              // Update status to error so frontend knows
+              await this.supabase.from('devices').update({
+                status: 'error',
+                error_message: 'Failed to generate pairing code. Please try again.'
+              }).eq('id', deviceId);
+            }
+          } catch (err) {
+            console.error(`❌ [Pairing-Manager] Error generating pairing code:`, err);
+
+            await this.supabase.from('devices').update({
+              status: 'error',
+              error_message: err.message || 'Error generating pairing code'
+            }).eq('id', deviceId);
+          }
+        }, 3000); // Give socket more time to initialize
+      }
+
       console.log(`${'='.repeat(60)}\n`);
 
     } catch (error) {

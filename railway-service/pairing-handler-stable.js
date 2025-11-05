@@ -52,11 +52,18 @@ class StablePairingHandler {
       console.log(`📱 [${deviceName}] Requesting pairing code for: ${phone}`);
 
       // Wait for socket to be ready with proper state check
-      const isReady = await this.waitForSocket(sock, 10000);
+      const isReady = await this.waitForSocket(sock, 15000);
       if (!isReady) {
-        console.error(`❌ [${deviceName}] Socket not ready after 10 seconds`);
+        console.error(`❌ [${deviceName}] Socket not ready after 15 seconds`);
+        console.error(`❌ [${deviceName}] Socket details:`, {
+          exists: !!sock,
+          hasWs: !!sock?.ws,
+          wsState: sock?.ws?.readyState,
+          hasAuthState: !!sock?.authState,
+          hasPairingMethod: typeof sock?.requestPairingCode === 'function'
+        });
         this.activeSessions.delete(deviceId);
-        await this.storePairingError(deviceId, 'Socket not ready for pairing', supabase);
+        await this.storePairingError(deviceId, 'Socket not ready for pairing. Please try again.', supabase);
         return false;
       }
 
@@ -229,7 +236,7 @@ class StablePairingHandler {
   /**
    * Wait for socket to be ready with proper state checks
    */
-  async waitForSocket(sock, maxWait = 10000) {
+  async waitForSocket(sock, maxWait = 15000) {
     const start = Date.now();
 
     console.log('⏳ Waiting for socket to be ready...');
@@ -238,12 +245,14 @@ class StablePairingHandler {
       try {
         // Check if socket exists
         if (!sock) {
+          console.log('⏳ Socket not initialized yet...');
           await new Promise(resolve => setTimeout(resolve, 500));
           continue;
         }
 
         // Check if requestPairingCode method exists
         if (typeof sock.requestPairingCode !== 'function') {
+          console.log('⏳ requestPairingCode method not available yet...');
           await new Promise(resolve => setTimeout(resolve, 500));
           continue;
         }
@@ -251,20 +260,38 @@ class StablePairingHandler {
         // Check websocket connection state
         // WebSocket.OPEN = 1 means connection is ready
         if (sock.ws && sock.ws.readyState === 1) {
+          // Additional check: make sure socket is actually connected
+          if (sock.authState && sock.authState.creds) {
+            console.log('✅ Socket is ready (WebSocket OPEN + Auth state available)');
+            return true;
+          }
+        }
+
+        // Check if socket is in CONNECTING state
+        const wsState = sock.ws?.readyState;
+        const wsStateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+
+        // If WebSocket is OPEN and auth state exists, we're good
+        if (wsState === 1 && sock.authState) {
           console.log('✅ Socket is ready (WebSocket OPEN)');
           return true;
         }
 
-        // Check alternative: if auth state has creds
-        if (sock.authState && sock.authState.creds) {
-          console.log('✅ Socket is ready (Auth state available)');
-          return true;
+        // If WebSocket is still CONNECTING (0), keep waiting
+        if (wsState === 0) {
+          console.log(`⏳ Socket state: WebSocket=CONNECTING, waiting...`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+
+        // If WebSocket is CLOSED or CLOSING, socket failed
+        if (wsState === 2 || wsState === 3) {
+          console.error(`❌ Socket state: WebSocket=${wsStateNames[wsState]}, socket failed`);
+          return false;
         }
 
         // Log current state for debugging
-        const wsState = sock.ws?.readyState;
-        const wsStateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
-        console.log(`⏳ Socket state: WebSocket=${wsStateNames[wsState] || 'N/A'}, waiting...`);
+        console.log(`⏳ Socket state: WebSocket=${wsStateNames[wsState] || 'N/A'}, AuthState=${!!sock.authState}, waiting...`);
 
         await new Promise(resolve => setTimeout(resolve, 1000));
 
