@@ -10,6 +10,35 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
   },
+  
+  // ✨ BUILD OPTIMIZATION
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Pisahkan vendor React agar di-cache terpisah
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          // Pisahkan Supabase karena ukurannya besar
+          'supabase': ['@supabase/supabase-js'],
+          // Pisahkan UI components kalau pakai library besar
+          // 'ui-vendor': ['lucide-react', '@radix-ui/react-dialog'] // sesuaikan dengan library yang kamu pakai
+        }
+      }
+    },
+    // Tingkatkan limit warning chunk size
+    chunkSizeWarningLimit: 1000,
+    // Minify dengan terser untuk hasil optimal
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: mode === 'production', // hapus console.log di production
+        drop_debugger: mode === 'production'
+      }
+    },
+    // Enable source map untuk development, disable untuk production
+    sourcemap: mode === 'development'
+  },
+  
   plugins: [
     react(), 
     mode === "development" && componentTagger(),
@@ -73,6 +102,7 @@ export default defineConfig(({ mode }) => ({
       }
     })
   ].filter(Boolean),
+  
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
