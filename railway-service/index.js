@@ -7,11 +7,10 @@ if (!global.crypto) {
 const { default: makeWASocket, DisconnectReason, fetchLatestBaileysVersion, Browsers, initAuthCreds, BufferJSON } = require('@whiskeysockets/baileys');
 const { createClient } = require('@supabase/supabase-js');
 const os = require('os');
-const redis = require('./redis-client');
 
 // Import handlers for QR and Pairing code
 const { handleQRCode } = require('./qr-handler');
-const stablePairingHandler = require('./pairing-handler-stable');
+const simplePairingHandler = require('./pairing-simple');
 
 // Supabase config dari environment variables
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -50,9 +49,6 @@ async function startService() {
   console.log('🚀 WhatsApp Baileys Service Started');
   console.log('📡 Using polling mechanism (optimized intervals)');
   console.log('🔗 Supabase URL:', supabaseUrl);
-  
-  // Clear any stale pairing sessions on startup
-  stablePairingHandler.clearAll();
 
   // Function to check devices
   async function checkDevices() {
@@ -230,36 +226,58 @@ async function useSupabaseAuthState(deviceId) {
 
 
 async function connectWhatsApp(device, isRecovery = false) {
+  const deviceName = device.device_name || 'Unknown';
+  const deviceId = device.id;
+
   if (isRecovery) {
-    console.log(`🔄 Session Recovery Mode for: ${device.device_name} (${device.id})`);
+    console.log(`🔄 [${deviceName}] Session Recovery Mode`);
   } else {
-    console.log(`📱 Connecting device: ${device.device_name} (${device.id})`);
+    console.log(`📱 [${deviceName}] Starting connection...`);
   }
 
   try {
-    const { state, saveCreds } = await useSupabaseAuthState(device.id);
-    
-    // Log session status
-    if (state.creds.registered) {
-      console.log(`✅ Valid session found in Supabase - will auto-restore`);
+    // Load auth state from Supabase
+    const { state, saveCreds } = await useSupabaseAuthState(deviceId);
+
+    // Check if already has valid session
+    const hasValidSession = state.creds.registered;
+
+    if (hasValidSession) {
+      console.log(`✅ [${deviceName}] Valid session found - will auto-restore`);
     } else {
-      console.log(`⚠️ No valid session - will require QR/pairing code`);
+      console.log(`⚠️ [${deviceName}] No valid session - needs QR/pairing`);
     }
 
-    // Use latest WhatsApp Web version to avoid handshake issues
-    const { version } = await fetchLatestBaileysVersion();
+    // Get device configuration
+    const { data: deviceConfig } = await supabase
+      .from('devices')
+      .select('connection_method, phone_for_pairing')
+      .eq('id', deviceId)
+      .single();
 
+    const isPairingMode = deviceConfig?.connection_method === 'pairing' && !!deviceConfig?.phone_for_pairing;
+    const phoneForPairing = deviceConfig?.phone_for_pairing;
+
+    if (isPairingMode) {
+      console.log(`🔑 [${deviceName}] Pairing mode enabled for phone: ${phoneForPairing}`);
+    }
+
+    // Get latest WhatsApp Web version
+    const { version } = await fetchLatestBaileysVersion();
+    console.log(`📱 [${deviceName}] Using WA version: ${version.join('.')}`);
+
+    // Create WhatsApp socket
     const sock = makeWASocket({
       version,
       auth: state,
-      printQRInTerminal: false, // We'll handle QR ourselves
-      browser: ['HalloWa', 'Chrome', '120.0.0'], // Custom browser name for WhatsApp
+      printQRInTerminal: false,
+      browser: ['HalloWa', 'Chrome', '120.0.0'],
       connectTimeoutMs: 60_000,
       keepAliveIntervalMs: 10_000,
       syncFullHistory: false,
       markOnlineOnConnect: true,
       generateHighQualityLinkPreview: false,
-      getMessage: async () => null, // Disable message retry
+      getMessage: async () => null,
       patchMessageBeforeSending: (message) => {
         const requiresPatch = !!(
           message.buttonsMessage ||
@@ -283,86 +301,53 @@ async function connectWhatsApp(device, isRecovery = false) {
       },
     });
 
-    activeSockets.set(device.id, sock);
+    // Store socket
+    activeSockets.set(deviceId, sock);
+    console.log(`✅ [${deviceName}] Socket created`);
 
-    // Track pairing mode
-    let pairingMode = false;
-    let pairingCodeGenerated = false;
+    // ==========================================
+    // CRITICAL: Request pairing code IMMEDIATELY after socket creation
+    // This MUST happen BEFORE connection is established
+    // ==========================================
+    if (isPairingMode && !hasValidSession && !isRecovery) {
+      console.log(`🔐 [${deviceName}] Requesting pairing code IMMEDIATELY...`);
 
-    // Check if device is configured for pairing
-    const { data: deviceConfig } = await supabase
-      .from('devices')
-      .select('connection_method, phone_for_pairing')
-      .eq('id', device.id)
-      .single();
+      // Small delay to let socket initialize
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
-    pairingMode = deviceConfig?.connection_method === 'pairing' && !!deviceConfig?.phone_for_pairing;
+      const result = await simplePairingHandler.requestPairingCode(
+        sock,
+        phoneForPairing,
+        deviceId,
+        supabase
+      );
 
-    if (pairingMode) {
-      console.log('🔑 Pairing mode enabled for device:', device.device_name);
-      console.log('📞 Phone number for pairing:', deviceConfig.phone_for_pairing);
+      if (result.success) {
+        console.log(`✅ [${deviceName}] Pairing code generated: ${result.code}`);
+      } else {
+        console.error(`❌ [${deviceName}] Pairing code failed: ${result.error}`);
+      }
     }
 
+    // ==========================================
     // Handle connection updates
+    // ==========================================
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
 
-      console.log(`📡 Connection update for ${device.device_name}:`, {
+      console.log(`📡 [${deviceName}] Connection update:`, {
         connection,
         registered: sock.authState.creds.registered,
-        isRecovery,
         hasQR: !!qr,
-        pairingMode,
-        pairingCodeGenerated
+        isPairingMode
       });
 
-      // IMPORTANT: Only generate QR/pairing if NOT in recovery mode AND not registered
-      if (!sock.authState.creds.registered && !isRecovery) {
-        try {
-          // If in pairing mode, handle pairing code
-          if (pairingMode && !pairingCodeGenerated) {
-            // Wait for socket to be in OPEN state (websocket connected)
-            // This happens when connection === 'open' (initial handshake) or when we get QR event
-            const socketReady = (connection === 'open') || (sock.ws && sock.ws.readyState === 1);
-
-            console.log(`📱 Pairing mode check:`, {
-              connection,
-              socketReady,
-              wsState: sock.ws?.readyState,
-              pairingCodeGenerated
-            });
-
-            // Trigger pairing code generation when socket is ready
-            if (socketReady) {
-              console.log('🔐 Socket ready - generating pairing code...');
-
-              // Generate pairing code (has built-in retry mechanism)
-              const success = await stablePairingHandler.generatePairingCode(sock, device, supabase);
-
-              if (success) {
-                pairingCodeGenerated = true;
-                console.log('✅ Pairing code generated successfully');
-                // Don't generate QR when pairing is successful
-                return;
-              } else {
-                console.log('⚠️ Pairing code generation failed - will retry on next connection update');
-                // Don't mark as generated, so it can retry
-              }
-            } else {
-              console.log('⏳ Waiting for socket to be ready for pairing...');
-            }
-          }
-
-          // QR method - only if NOT in pairing mode
-          if (qr && !pairingMode) {
-            console.log('📷 QR mode - generating QR code...');
-            await handleQRCode(device, qr, supabase);
-          } else if (qr && pairingMode) {
-            console.log('⛔ Skipping QR generation - device is in pairing mode');
-          }
-        } catch (error) {
-          console.error('❌ Error generating QR/pairing code:', error);
-        }
+      // Handle QR code for QR method (not pairing mode)
+      if (qr && !isPairingMode && !sock.authState.creds.registered && !isRecovery) {
+        console.log(`📷 [${deviceName}] QR code received - generating...`);
+        await handleQRCode(device, qr, supabase);
+      } else if (qr && isPairingMode) {
+        console.log(`⛔ [${deviceName}] QR received but skipped (pairing mode)`);
       }
 
       // Connected successfully
@@ -418,121 +403,135 @@ async function connectWhatsApp(device, isRecovery = false) {
         console.log('📊 Disconnect statusCode:', code);
         console.log('🧾 Error message:', message);
 
-        activeSockets.delete(device.id);
-        
-        // Clean up pairing sessions on disconnect
-        stablePairingHandler.clearDevice(device.id);
+        activeSockets.delete(deviceId);
 
         try {
           // Respect user-initiated cancel: do nothing if already disconnected
           const { data: current } = await supabase
             .from('devices')
-            .select('status')
-            .eq('id', device.id)
+            .select('status, session_data')
+            .eq('id', deviceId)
             .single();
 
           if (current?.status === 'disconnected') {
-            console.log('🧘 User set status to disconnected — skipping auto-reconnect');
+            console.log(`🧘 [${deviceName}] User set status to disconnected — skipping auto-reconnect`);
             return;
           }
 
           if (restartRequired) {
             // Keep auth, try session recovery
-            console.log('♻️ Restart required - attempting session recovery');
+            console.log(`♻️ [${deviceName}] Restart required - attempting session recovery`);
             const hasSessionData = current?.session_data?.creds?.registered;
-            
+
             if (hasSessionData) {
-              console.log('🔄 Session data available - recovering without QR');
+              console.log(`🔄 [${deviceName}] Session data available - recovering without QR`);
               setTimeout(() => {
-                if (!activeSockets.has(device.id)) {
+                if (!activeSockets.has(deviceId)) {
                   connectWhatsApp(device, true).catch(() => {}); // Recovery mode
                 }
               }, 1500);
             } else {
-              console.log('⚠️ No session data - will generate QR');
-              await supabase.from('devices').update({ status: 'connecting' }).eq('id', device.id);
+              console.log(`⚠️ [${deviceName}] No session data - will generate QR/pairing`);
+              await supabase.from('devices').update({ status: 'connecting' }).eq('id', deviceId);
               setTimeout(() => {
-                if (!activeSockets.has(device.id)) {
+                if (!activeSockets.has(deviceId)) {
                   connectWhatsApp(device).catch(() => {});
                 }
               }, 1500);
             }
           } else if (code === 401 || code === 405) {
             // Authentication failed: clear auth and force fresh login (QR/Pairing)
-            console.log(`❌ ${code} Authentication failed - clearing session & reconnecting for fresh login`);
-            await supabase.from('devices').update({ 
+            console.log(`❌ [${deviceName}] ${code} Authentication failed - clearing session`);
+            await supabase.from('devices').update({
               status: 'connecting',
-              qr_code: null, 
+              qr_code: null,
               pairing_code: null,
-              session_data: null 
-            }).eq('id', device.id);
+              session_data: null
+            }).eq('id', deviceId);
             setTimeout(() => {
-              if (!activeSockets.has(device.id)) {
-                console.log('🔁 Reconnect after auth failure...');
+              if (!activeSockets.has(deviceId)) {
+                console.log(`🔁 [${deviceName}] Reconnect after auth failure...`);
                 connectWhatsApp(device).catch(() => {});
               }
             }, 1000);
           } else if (loggedOut) {
-            console.log('👋 Logged out - clearing session');
-            await supabase.from('devices').update({ status: 'disconnected', phone_number: null, qr_code: null, session_data: null }).eq('id', device.id);
+            console.log(`👋 [${deviceName}] Logged out - clearing session`);
+            await supabase.from('devices').update({
+              status: 'disconnected',
+              phone_number: null,
+              qr_code: null,
+              pairing_code: null,
+              session_data: null
+            }).eq('id', deviceId);
           } else {
             // Other transient errors -> try session recovery if available
-            console.log('⚠️ Transient error - checking session data');
+            console.log(`⚠️ [${deviceName}] Transient error - checking session data`);
             const hasSessionData = current?.session_data?.creds?.registered;
-            
+
             if (hasSessionData) {
-              console.log('🔄 Session data available - attempting recovery');
+              console.log(`🔄 [${deviceName}] Session data available - attempting recovery`);
               setTimeout(() => {
-                if (!activeSockets.has(device.id)) {
-                  console.log('🔁 Attempting session recovery...');
+                if (!activeSockets.has(deviceId)) {
+                  console.log(`🔁 [${deviceName}] Attempting session recovery...`);
                   connectWhatsApp(device, true).catch(() => {});
                 }
               }, 500);
             } else {
-              console.log('⚠️ No session data - will generate QR');
-              await supabase.from('devices').update({ status: 'connecting' }).eq('id', device.id);
+              console.log(`⚠️ [${deviceName}] No session data - will generate QR/pairing`);
+              await supabase.from('devices').update({ status: 'connecting' }).eq('id', deviceId);
               setTimeout(() => {
-                if (!activeSockets.has(device.id)) {
-                  console.log('🔁 Attempting reconnect with QR...');
+                if (!activeSockets.has(deviceId)) {
+                  console.log(`🔁 [${deviceName}] Attempting reconnect...`);
                   connectWhatsApp(device).catch(() => {});
                 }
               }, 500);
             }
           }
         } catch (discError) {
-          console.error('❌ Error handling disconnection:', discError);
+          console.error(`❌ [${deviceName}] Error handling disconnection:`, discError);
         }
       }
     });
 
     // Save credentials whenever they update
     sock.ev.on('creds.update', async () => {
-      try { await saveCreds(); } catch (e) { console.error('❌ saveCreds error:', e); }
+      try {
+        await saveCreds();
+      } catch (e) {
+        console.error(`❌ [${deviceName}] saveCreds error:`, e);
+      }
     });
 
     // Handle messages (optional - for future message handling)
     sock.ev.on('messages.upsert', async ({ messages }) => {
-      console.log('💬 Message received:', messages[0]?.key?.remoteJid);
+      const jid = messages[0]?.key?.remoteJid;
+      if (jid) {
+        console.log(`💬 [${deviceName}] Message from:`, jid);
+      }
       // You can save messages to database here
     });
 
-    // Store sock reference for sending messages
-    sock.deviceId = device.id;
+    // Store device reference on socket
+    sock.deviceId = deviceId;
 
   } catch (error) {
-    console.error('❌ Error connecting WhatsApp:', error);
-    
+    console.error(`❌ [${deviceName}] Error connecting WhatsApp:`, error);
+
     // Update status to error
     try {
       await supabase
         .from('devices')
-        .update({ status: 'error' })
-        .eq('id', device.id);
+        .update({
+          status: 'error',
+          error_message: error.message || 'Connection error',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', deviceId);
     } catch (updateError) {
-      console.error('❌ Error updating error status:', updateError);
+      console.error(`❌ [${deviceName}] Error updating error status:`, updateError);
     }
-    
-    activeSockets.delete(device.id);
+
+    activeSockets.delete(deviceId);
   }
 }
 
