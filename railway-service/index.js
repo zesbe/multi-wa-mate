@@ -10,7 +10,7 @@ const os = require('os');
 
 // Import handlers for QR and Pairing code
 const { handleQRCode } = require('./qr-handler');
-const simplePairingHandler = require('./pairing-simple');
+const realPairingHandler = require('./pairing-real');
 
 // Supabase config dari environment variables
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -236,19 +236,7 @@ async function connectWhatsApp(device, isRecovery = false) {
   }
 
   try {
-    // Load auth state from Supabase
-    const { state, saveCreds } = await useSupabaseAuthState(deviceId);
-
-    // Check if already has valid session
-    const hasValidSession = state.creds.registered;
-
-    if (hasValidSession) {
-      console.log(`✅ [${deviceName}] Valid session found - will auto-restore`);
-    } else {
-      console.log(`⚠️ [${deviceName}] No valid session - needs QR/pairing`);
-    }
-
-    // Get device configuration
+    // Get device configuration FIRST to check pairing mode
     const { data: deviceConfig } = await supabase
       .from('devices')
       .select('connection_method, phone_for_pairing')
@@ -258,8 +246,73 @@ async function connectWhatsApp(device, isRecovery = false) {
     const isPairingMode = deviceConfig?.connection_method === 'pairing' && !!deviceConfig?.phone_for_pairing;
     const phoneForPairing = deviceConfig?.phone_for_pairing;
 
-    if (isPairingMode) {
-      console.log(`🔑 [${deviceName}] Pairing mode enabled for phone: ${phoneForPairing}`);
+    console.log(`📋 [${deviceName}] Connection method:`, deviceConfig?.connection_method || 'qr');
+    console.log(`📞 [${deviceName}] Phone for pairing:`, phoneForPairing || 'N/A');
+    console.log(`🔑 [${deviceName}] Is pairing mode:`, isPairingMode);
+
+    // Load auth state from Supabase OR use fresh state
+    let state, saveCreds, forceFreshAuth = false;
+
+    // CRITICAL: If pairing mode and NOT recovery, use FRESH auth state
+    // Do NOT load existing credentials - they will prevent pairing
+    if (isPairingMode && !isRecovery) {
+      console.log(`🆕 [${deviceName}] Using FRESH auth state for pairing (no existing credentials)`);
+
+      // Force fresh auth credentials
+      const creds = initAuthCreds();
+      const keys = {};
+
+      const persist = async () => {
+        const sessionData = {
+          creds: JSON.parse(JSON.stringify(creds, BufferJSON.replacer)),
+          keys: JSON.parse(JSON.stringify(keys, BufferJSON.replacer)),
+          saved_at: new Date().toISOString(),
+        };
+
+        await supabase
+          .from('devices')
+          .update({ session_data: sessionData })
+          .eq('id', deviceId);
+      };
+
+      state = {
+        creds,
+        keys: {
+          get: async (type, ids) => {
+            const data = keys[type] || {};
+            const result = {};
+            for (const id of ids) result[id] = data[id] || null;
+            return result;
+          },
+          set: async (data) => {
+            for (const type of Object.keys(data)) {
+              keys[type] = keys[type] || {};
+              Object.assign(keys[type], data[type]);
+            }
+            await persist();
+          },
+        },
+      };
+
+      saveCreds = persist;
+      forceFreshAuth = true;
+
+      console.log(`✅ [${deviceName}] Fresh auth state created`);
+      console.log(`🔓 [${deviceName}] Credentials registered:`, creds.registered);
+    } else {
+      // Load existing session from Supabase
+      console.log(`📂 [${deviceName}] Loading auth state from Supabase...`);
+      const authState = await useSupabaseAuthState(deviceId);
+      state = authState.state;
+      saveCreds = authState.saveCreds;
+
+      const hasValidSession = state.creds.registered;
+
+      if (hasValidSession) {
+        console.log(`✅ [${deviceName}] Valid session found - will auto-restore`);
+      } else {
+        console.log(`⚠️ [${deviceName}] No valid session - needs QR/pairing`);
+      }
     }
 
     // Get latest WhatsApp Web version
@@ -308,25 +361,40 @@ async function connectWhatsApp(device, isRecovery = false) {
     // ==========================================
     // CRITICAL: Request pairing code IMMEDIATELY after socket creation
     // This MUST happen BEFORE connection is established
+    // With FRESH auth state to ensure Baileys can generate real pairing code
     // ==========================================
-    if (isPairingMode && !hasValidSession && !isRecovery) {
-      console.log(`🔐 [${deviceName}] Requesting pairing code IMMEDIATELY...`);
+    if (isPairingMode && forceFreshAuth) {
+      console.log(`🔐 [${deviceName}] ==========================================`);
+      console.log(`🔐 [${deviceName}] REQUESTING REAL BAILEYS PAIRING CODE`);
+      console.log(`🔐 [${deviceName}] ==========================================`);
+      console.log(`🔐 [${deviceName}] Socket type:`, sock.constructor.name);
+      console.log(`🔐 [${deviceName}] Has requestPairingCode:`, typeof sock.requestPairingCode === 'function');
+      console.log(`🔐 [${deviceName}] Auth registered:`, sock.authState?.creds?.registered);
+      console.log(`🔐 [${deviceName}] Phone number:`, phoneForPairing);
 
       // Small delay to let socket initialize
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log(`⏳ [${deviceName}] Waiting 3 seconds for socket initialization...`);
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
-      const result = await simplePairingHandler.requestPairingCode(
+      const result = await realPairingHandler.requestPairingCode(
         sock,
         phoneForPairing,
         deviceId,
+        deviceName,
         supabase
       );
 
       if (result.success) {
-        console.log(`✅ [${deviceName}] Pairing code generated: ${result.code}`);
+        console.log(`🎉 [${deviceName}] ==========================================`);
+        console.log(`🎉 [${deviceName}] ✅ PAIRING CODE SUCCESS: ${result.code}`);
+        console.log(`🎉 [${deviceName}] ==========================================`);
       } else {
-        console.error(`❌ [${deviceName}] Pairing code failed: ${result.error}`);
+        console.error(`💥 [${deviceName}] ==========================================`);
+        console.error(`💥 [${deviceName}] ❌ PAIRING CODE FAILED: ${result.error}`);
+        console.error(`💥 [${deviceName}] ==========================================`);
       }
+    } else if (isPairingMode && !forceFreshAuth) {
+      console.log(`⚠️ [${deviceName}] Pairing mode BUT not using fresh auth - skipping pairing request`);
     }
 
     // ==========================================
