@@ -10,7 +10,7 @@ const os = require('os');
 
 // Import handlers for QR and Pairing code
 const { handleQRCode } = require('./qr-handler');
-const simplePairingHandler = require('./pairing-simple');
+const simplePairingHandler = require('./pairing-handler-stable');
 
 // Supabase config dari environment variables
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -315,17 +315,16 @@ async function connectWhatsApp(device, isRecovery = false) {
       // Small delay to let socket initialize
       await new Promise(resolve => setTimeout(resolve, 2000));
 
-      const result = await simplePairingHandler.requestPairingCode(
+      const result = await simplePairingHandler.generatePairingCode(
         sock,
-        phoneForPairing,
-        deviceId,
+        device,
         supabase
       );
 
-      if (result.success) {
-        console.log(`✅ [${deviceName}] Pairing code generated: ${result.code}`);
+      if (result) {
+        console.log(`✅ [${deviceName}] Pairing code generated successfully`);
       } else {
-        console.error(`❌ [${deviceName}] Pairing code failed: ${result.error}`);
+        console.error(`❌ [${deviceName}] Pairing code generation failed`);
       }
     }
 
