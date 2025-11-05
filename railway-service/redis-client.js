@@ -9,13 +9,20 @@ const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 class RedisClient {
   constructor() {
     if (!REDIS_URL || !REDIS_TOKEN) {
-      throw new Error('Redis credentials not configured');
+      console.warn('⚠️ Redis credentials not configured - Redis features will be disabled');
+      this.enabled = false;
+      return;
     }
+    this.enabled = true;
     this.baseUrl = REDIS_URL;
     this.token = REDIS_TOKEN;
   }
 
   async execute(command) {
+    if (!this.enabled) {
+      return null;
+    }
+
     const response = await fetch(this.baseUrl, {
       method: 'POST',
       headers: {
@@ -35,6 +42,9 @@ class RedisClient {
 
   // QR Code Management (Keep - temporary data)
   async setQRCode(deviceId, qrCode, ttl = 600) {
+    if (!this.enabled) {
+      return false;
+    }
     try {
       // TTL 10 minutes for QR codes (extended for better stability)
       const key = `qr:${deviceId}`;
@@ -48,17 +58,26 @@ class RedisClient {
   }
 
   async getQRCode(deviceId) {
+    if (!this.enabled) {
+      return null;
+    }
     const key = `qr:${deviceId}`;
     return await this.execute(['GET', key]);
   }
 
   async deleteQRCode(deviceId) {
+    if (!this.enabled) {
+      return;
+    }
     const key = `qr:${deviceId}`;
     await this.execute(['DEL', key]);
   }
 
   // Pairing Code Management (Keep - temporary data)
   async setPairingCode(deviceId, pairingCode, ttl = 600) {
+    if (!this.enabled) {
+      return false;
+    }
     try {
       // TTL 10 minutes for pairing codes (extended for better stability)
       const key = `pairing:${deviceId}`;
@@ -72,17 +91,26 @@ class RedisClient {
   }
 
   async getPairingCode(deviceId) {
+    if (!this.enabled) {
+      return null;
+    }
     const key = `pairing:${deviceId}`;
     return await this.execute(['GET', key]);
   }
 
   async deletePairingCode(deviceId) {
+    if (!this.enabled) {
+      return;
+    }
     const key = `pairing:${deviceId}`;
     await this.execute(['DEL', key]);
   }
 
   // Cleanup all device data (only temporary codes)
   async cleanupDevice(deviceId) {
+    if (!this.enabled) {
+      return;
+    }
     await Promise.all([
       this.deleteQRCode(deviceId),
       this.deletePairingCode(deviceId),
