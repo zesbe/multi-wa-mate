@@ -21,13 +21,15 @@ import {
   Settings,
   LogOut,
   Menu,
-  X
+  X,
+  BarChart3
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
+  { icon: BarChart3, label: "Analytics", path: "/analytics", badge: "New" },
   { icon: PlayCircle, label: "Video Tutorial", path: "/tutorial" },
   { icon: MessageSquare, label: "CRM Chat", path: "/crm-chat", badge: "New" },
   { icon: Radio, label: "Device Broadcast", path: "/devices" },
