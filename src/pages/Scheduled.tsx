@@ -456,7 +456,7 @@ export default function Scheduled() {
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
-              <CardTitle className="text-lg font-bold mb-2 truncate text-foreground">{broadcast.name}</CardTitle>
+              <CardTitle className="text-lg font-bold mb-2 truncate text-foreground">{String(broadcast.name || 'Broadcast')}</CardTitle>
             <div className="flex flex-wrap gap-2">
               <Badge className={getStatusColor(broadcast.status)} variant="default">
                 {getStatusText(broadcast.status)}
@@ -502,7 +502,7 @@ export default function Scheduled() {
       <CardContent className="space-y-3">
         {/* Message Preview */}
         <div className="bg-muted/80 rounded-lg p-3 border border-border">
-          <p className="text-sm line-clamp-2 text-foreground">{broadcast.message}</p>
+          <p className="text-sm line-clamp-2 text-foreground">{String(broadcast.message || '')}</p>
         </div>
         
         <div className="flex flex-wrap gap-2">
@@ -597,12 +597,12 @@ export default function Scheduled() {
               <SelectContent className="max-h-[280px] bg-popover text-popover-foreground border-border z-50">
                 <ScrollArea className="h-[260px]">
                   {TIMEZONES.map((tz) => (
-                    <SelectItem 
-                      key={tz.value} 
-                      value={tz.value} 
+                    <SelectItem
+                      key={tz.value}
+                      value={tz.value}
                       className="text-xs cursor-pointer hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
                     >
-                      {tz.label}
+                      {String(tz.label || tz.value)}
                     </SelectItem>
                   ))}
                 </ScrollArea>
@@ -674,7 +674,7 @@ export default function Scheduled() {
                     />
                     <p className="text-xs md:text-xs text-muted-foreground flex items-center gap-1">
                       <Globe className="w-3 h-3" />
-                      Waktu lokal Anda: {TIMEZONES.find(tz => tz.value === userTimezone)?.label}
+                      Waktu lokal Anda: {String(TIMEZONES.find(tz => tz.value === userTimezone)?.label || userTimezone)}
                     </p>
                   </div>
 
@@ -1035,7 +1035,7 @@ export default function Scheduled() {
           <DialogHeader>
             <DialogTitle className="text-lg">Edit Jadwal Broadcast</DialogTitle>
             <DialogDescription className="text-sm">
-              Ubah waktu pengiriman broadcast: {selectedBroadcast?.name}
+              Ubah waktu pengiriman broadcast: {String(selectedBroadcast?.name || 'Broadcast')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -1051,7 +1051,7 @@ export default function Scheduled() {
               />
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 <Globe className="w-3 h-3" />
-                {TIMEZONES.find(tz => tz.value === userTimezone)?.label}
+                {String(TIMEZONES.find(tz => tz.value === userTimezone)?.label || userTimezone)}
               </p>
             </div>
           </div>
@@ -1080,7 +1080,7 @@ export default function Scheduled() {
           <AlertDialogHeader>
             <AlertDialogTitle>Hapus Broadcast?</AlertDialogTitle>
             <AlertDialogDescription>
-              Broadcast "{selectedBroadcast?.name}" akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.
+              Broadcast "{String(selectedBroadcast?.name || 'ini')}" akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1132,7 +1132,7 @@ export default function Scheduled() {
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <Label className="text-xs text-muted-foreground">Nama Campaign</Label>
-                          <p className="font-medium mt-1 text-foreground">{selectedBroadcast.name}</p>
+                          <p className="font-medium mt-1 text-foreground">{String(selectedBroadcast.name || 'Broadcast')}</p>
                         </div>
                         <div>
                           <Label className="text-xs text-muted-foreground">Status</Label>
@@ -1200,7 +1200,7 @@ export default function Scheduled() {
                           />
                         </div>
                       )}
-                      <p className="whitespace-pre-wrap text-sm text-foreground">{selectedBroadcast.message}</p>
+                      <p className="whitespace-pre-wrap text-sm text-foreground">{String(selectedBroadcast.message || '')}</p>
                     </CardContent>
                   </Card>
                 </div>
