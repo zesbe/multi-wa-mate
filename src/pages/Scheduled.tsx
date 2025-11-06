@@ -58,6 +58,38 @@ interface Broadcast {
   device_id?: string;
 }
 
+// Helper function to safely convert any value to a display string
+const safeStringify = (value: any): string => {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (typeof value === 'object') {
+    // Handle objects - try to extract meaningful data
+    if (value.toString && value.toString !== Object.prototype.toString) {
+      return String(value);
+    }
+    // If it's a plain object, try to get a property that might be the actual value
+    if (value.value !== undefined) {
+      return safeStringify(value.value);
+    }
+    if (value.text !== undefined) {
+      return safeStringify(value.text);
+    }
+    if (value.name !== undefined) {
+      return safeStringify(value.name);
+    }
+    // Fallback to empty string for objects we can't handle
+    return '';
+  }
+  return String(value);
+};
+
 export default function Scheduled() {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [devices, setDevices] = useState<any[]>([]);
@@ -230,8 +262,8 @@ export default function Scheduled() {
   const filteredContactList = contacts.filter(
     (c) => {
       // Ensure contact data is valid string before filtering
-      const name = String(c.name || '').toLowerCase();
-      const phone = String(c.phone_number || '');
+      const name = safeStringify(c.name).toLowerCase();
+      const phone = safeStringify(c.phone_number);
       const search = contactSearch.toLowerCase();
       return name.includes(search) || phone.includes(search);
     }
@@ -755,7 +787,7 @@ export default function Scheduled() {
                             <div className="flex flex-wrap gap-2">
                               {manualNumbers.map((num) => (
                                 <Badge key={num} variant="secondary" className="gap-1 text-sm py-1.5 px-2.5">
-                                  {String(num)}
+                                  {safeStringify(num)}
                                   <X
                                     className="w-3.5 h-3.5 cursor-pointer hover:text-destructive"
                                     onClick={() => removeManualNumber(num)}
@@ -783,9 +815,14 @@ export default function Scheduled() {
                             ) : (
                               filteredContactList.map((contact) => {
                                 // Ensure all contact data is string to prevent React render errors
-                                const phoneNumber = String(contact.phone_number || '');
-                                const contactName = String(contact.name || phoneNumber || 'Unknown');
+                                const phoneNumber = safeStringify(contact.phone_number);
+                                const contactName = safeStringify(contact.name) || phoneNumber || 'Unknown';
                                 const isGroup = Boolean(contact.is_group);
+
+                                // Skip rendering if no valid phone number
+                                if (!phoneNumber) {
+                                  return null;
+                                }
 
                                 return (
                                   <div
