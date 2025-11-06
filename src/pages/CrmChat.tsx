@@ -1,15 +1,39 @@
 import { Layout } from "@/components/Layout";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Send, Phone, MoreVertical, Filter } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Search, Send, Phone, MoreVertical, Filter, Archive,
+  Tag, Star, StickyNote, Zap, Image as ImageIcon,
+  FileText, User, MessageSquare, Clock, Check, CheckCheck,
+  X, Plus, Edit, Trash2, AlertCircle, Info
+} from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface Contact {
   id: string;
@@ -18,6 +42,11 @@ interface Contact {
   last_message?: string;
   last_message_time?: string;
   unread_count?: number;
+  is_starred?: boolean;
+  is_archived?: boolean;
+  label?: string;
+  notes?: string;
+  created_at?: string;
 }
 
 interface Message {
@@ -25,7 +54,24 @@ interface Message {
   content: string;
   sender: "user" | "contact";
   timestamp: string;
+  status?: "sent" | "delivered" | "read" | "failed";
+  media_url?: string;
+  media_type?: string;
 }
+
+interface QuickReply {
+  id: string;
+  name: string;
+  message: string;
+}
+
+const CHAT_LABELS = [
+  { value: "lead", label: "Lead", color: "bg-blue-500" },
+  { value: "customer", label: "Customer", color: "bg-green-500" },
+  { value: "support", label: "Support", color: "bg-orange-500" },
+  { value: "vip", label: "VIP", color: "bg-purple-500" },
+  { value: "follow-up", label: "Follow Up", color: "bg-yellow-500" },
+];
 
 export const CrmChat = () => {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -36,11 +82,31 @@ export const CrmChat = () => {
   const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [devices, setDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [chatFilter, setChatFilter] = useState<"all" | "unread" | "starred" | "archived">("all");
+  const [showContactInfo, setShowContactInfo] = useState(false);
+  const [contactNotes, setContactNotes] = useState("");
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([
+    { id: "1", name: "Greeting", message: "Halo! Ada yang bisa saya bantu?" },
+    { id: "2", name: "Terima Kasih", message: "Terima kasih sudah menghubungi kami!" },
+    { id: "3", name: "Follow Up", message: "Halo, saya ingin follow up pesanan Anda." },
+  ]);
+  const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const [newQuickReply, setNewQuickReply] = useState({ name: "", message: "" });
+  const [editingQuickReply, setEditingQuickReply] = useState<QuickReply | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchDevices();
     fetchContacts();
   }, []);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   const fetchDevices = async () => {
     try {
@@ -55,7 +121,7 @@ export const CrmChat = () => {
 
       if (error) throw error;
       setDevices(data || []);
-      
+
       if (data && data.length > 0) {
         setSelectedDevice(data[0].id);
       }
@@ -77,7 +143,16 @@ export const CrmChat = () => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setContacts(data || []);
+
+      // Add mock data for demonstration
+      const enrichedData = (data || []).map((contact: any) => ({
+        ...contact,
+        is_starred: false,
+        is_archived: false,
+        unread_count: 0,
+      }));
+
+      setContacts(enrichedData);
     } catch (error: any) {
       toast.error("Gagal memuat kontak");
     } finally {
@@ -93,27 +168,140 @@ export const CrmChat = () => {
     }
 
     try {
-      // In production, this would send through WhatsApp API
+      // Create message object
       const newMsg: Message = {
         id: Date.now().toString(),
         content: newMessage,
         sender: "user",
         timestamp: new Date().toISOString(),
+        status: "sent",
       };
 
       setMessages([...messages, newMsg]);
       setNewMessage("");
+
+      // Simulate sending to WhatsApp (in production, integrate with backend)
       toast.success("Pesan terkirim");
+
+      // Update message status after delay (simulation)
+      setTimeout(() => {
+        setMessages(prev => prev.map(msg =>
+          msg.id === newMsg.id ? { ...msg, status: "delivered" as const } : msg
+        ));
+      }, 1000);
+
     } catch (error: any) {
       toast.error("Gagal mengirim pesan");
     }
   };
 
-  const filteredContacts = contacts.filter(
-    (contact) =>
-      contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      contact.phone_number.includes(searchQuery)
-  );
+  const handleToggleStar = (contactId: string) => {
+    setContacts(contacts.map(c =>
+      c.id === contactId ? { ...c, is_starred: !c.is_starred } : c
+    ));
+    toast.success("Status bintang diperbarui");
+  };
+
+  const handleArchiveChat = (contactId: string) => {
+    setContacts(contacts.map(c =>
+      c.id === contactId ? { ...c, is_archived: !c.is_archived } : c
+    ));
+    if (selectedContact?.id === contactId) {
+      setSelectedContact(null);
+    }
+    toast.success("Chat diarsipkan");
+  };
+
+  const handleSetLabel = (contactId: string, label: string) => {
+    setContacts(contacts.map(c =>
+      c.id === contactId ? { ...c, label } : c
+    ));
+    toast.success("Label diperbarui");
+  };
+
+  const handleSaveNotes = async () => {
+    if (!selectedContact) return;
+
+    setContacts(contacts.map(c =>
+      c.id === selectedContact.id ? { ...c, notes: contactNotes } : c
+    ));
+
+    setSelectedContact({ ...selectedContact, notes: contactNotes });
+    toast.success("Notes disimpan");
+  };
+
+  const handleUseQuickReply = (reply: QuickReply) => {
+    setNewMessage(reply.message);
+    setShowQuickReplies(false);
+  };
+
+  const handleSaveQuickReply = () => {
+    if (!newQuickReply.name.trim() || !newQuickReply.message.trim()) {
+      toast.error("Nama dan pesan tidak boleh kosong");
+      return;
+    }
+
+    if (editingQuickReply) {
+      setQuickReplies(quickReplies.map(qr =>
+        qr.id === editingQuickReply.id
+          ? { ...qr, name: newQuickReply.name, message: newQuickReply.message }
+          : qr
+      ));
+      toast.success("Quick reply diperbarui");
+    } else {
+      const newQR: QuickReply = {
+        id: Date.now().toString(),
+        name: newQuickReply.name,
+        message: newQuickReply.message,
+      };
+      setQuickReplies([...quickReplies, newQR]);
+      toast.success("Quick reply ditambahkan");
+    }
+
+    setNewQuickReply({ name: "", message: "" });
+    setEditingQuickReply(null);
+    setShowQuickReplies(false);
+  };
+
+  const handleDeleteQuickReply = (id: string) => {
+    setQuickReplies(quickReplies.filter(qr => qr.id !== id));
+    toast.success("Quick reply dihapus");
+  };
+
+  const filteredContacts = contacts.filter((contact) => {
+    const matchesSearch =
+      String(contact.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(contact.phone_number || '').includes(searchQuery);
+
+    const matchesFilter =
+      chatFilter === "all" ? !contact.is_archived :
+      chatFilter === "unread" ? (contact.unread_count || 0) > 0 && !contact.is_archived :
+      chatFilter === "starred" ? contact.is_starred && !contact.is_archived :
+      chatFilter === "archived" ? contact.is_archived :
+      true;
+
+    return matchesSearch && matchesFilter;
+  });
+
+  const getMessageStatusIcon = (status?: string) => {
+    switch (status) {
+      case "sent":
+        return <Check className="w-3 h-3" />;
+      case "delivered":
+      case "read":
+        return <CheckCheck className="w-3 h-3" />;
+      case "failed":
+        return <AlertCircle className="w-3 h-3 text-destructive" />;
+      default:
+        return <Clock className="w-3 h-3" />;
+    }
+  };
+
+  useEffect(() => {
+    if (selectedContact) {
+      setContactNotes(selectedContact.notes || "");
+    }
+  }, [selectedContact]);
 
   return (
     <Layout>
@@ -122,12 +310,88 @@ export const CrmChat = () => {
           <div>
             <h1 className="text-4xl font-bold text-foreground mb-2">CRM Chat</h1>
             <p className="text-muted-foreground">
-              Kelola percakapan WhatsApp dengan pelanggan Anda
+              Kelola percakapan WhatsApp dengan fitur CRM lengkap
             </p>
           </div>
-          <Badge variant="secondary" className="bg-primary/10 text-primary">
-            New
-          </Badge>
+          <div className="flex gap-2">
+            <Dialog open={showQuickReplies} onOpenChange={setShowQuickReplies}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Zap className="w-4 h-4 mr-2" />
+                  Quick Replies ({quickReplies.length})
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Quick Replies</DialogTitle>
+                  <DialogDescription>
+                    Kelola template pesan cepat untuk percakapan Anda
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    <Label>Tambah/Edit Quick Reply</Label>
+                    <Input
+                      placeholder="Nama (contoh: Greeting)"
+                      value={newQuickReply.name}
+                      onChange={(e) => setNewQuickReply({ ...newQuickReply, name: e.target.value })}
+                    />
+                    <Textarea
+                      placeholder="Pesan template..."
+                      value={newQuickReply.message}
+                      onChange={(e) => setNewQuickReply({ ...newQuickReply, message: e.target.value })}
+                      rows={3}
+                    />
+                    <Button onClick={handleSaveQuickReply} className="w-full">
+                      <Plus className="w-4 h-4 mr-2" />
+                      {editingQuickReply ? "Update" : "Tambah"} Quick Reply
+                    </Button>
+                  </div>
+
+                  <div className="border-t pt-4">
+                    <Label className="mb-3 block">Quick Replies Tersimpan</Label>
+                    <ScrollArea className="h-64">
+                      <div className="space-y-2">
+                        {quickReplies.map((reply) => (
+                          <Card key={reply.id} className="p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm mb-1">{reply.name}</p>
+                                <p className="text-xs text-muted-foreground line-clamp-2">
+                                  {reply.message}
+                                </p>
+                              </div>
+                              <div className="flex gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => {
+                                    setEditingQuickReply(reply);
+                                    setNewQuickReply({ name: reply.name, message: reply.message });
+                                  }}
+                                >
+                                  <Edit className="w-3 h-3" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => handleDeleteQuickReply(reply.id)}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
         {/* Device Selection */}
@@ -142,13 +406,14 @@ export const CrmChat = () => {
                 <SelectContent>
                   {devices.map((device) => (
                     <SelectItem key={device.id} value={device.id}>
-                      {device.name} - {device.phone_number || "Tidak ada nomor"}
+                      {device.device_name} - {device.phone_number || "Tidak ada nomor"}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               {devices.length === 0 && (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
                   Tidak ada device yang terhubung. Hubungkan device terlebih dahulu.
                 </p>
               )}
@@ -157,159 +422,429 @@ export const CrmChat = () => {
         </Card>
 
         {/* Chat Interface */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[600px]">
-          {/* Contact List */}
-          <Card className="lg:col-span-1">
-            <CardContent className="p-0">
-              <div className="p-4 border-b border-border">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Cari kontak..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Contact List - 4 columns */}
+          <div className="lg:col-span-4">
+            <Card className="h-[700px] flex flex-col">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Percakapan</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+                {/* Search */}
+                <div className="px-4 pb-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Cari kontak..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
                 </div>
-              </div>
-              <ScrollArea className="h-[500px]">
-                {filteredContacts.map((contact) => (
-                  <div
-                    key={contact.id}
-                    onClick={() => setSelectedContact(contact)}
-                    className={`p-4 border-b border-border cursor-pointer hover:bg-accent transition-colors ${
-                      selectedContact?.id === contact.id ? "bg-accent" : ""
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Avatar>
-                        <AvatarFallback className="bg-primary/10 text-primary">
-                          {contact.name.substring(0, 2).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <p className="font-medium text-sm truncate">
-                            {contact.name}
-                          </p>
-                          {contact.unread_count && contact.unread_count > 0 && (
-                            <Badge variant="destructive" className="ml-2">
-                              {contact.unread_count}
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {contact.phone_number}
-                        </p>
-                        {contact.last_message && (
-                          <p className="text-xs text-muted-foreground truncate mt-1">
-                            {contact.last_message}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {filteredContacts.length === 0 && (
-                  <div className="p-8 text-center text-muted-foreground">
-                    Tidak ada kontak ditemukan
-                  </div>
-                )}
-              </ScrollArea>
-            </CardContent>
-          </Card>
 
-          {/* Chat Window */}
-          <Card className="lg:col-span-2">
-            <CardContent className="p-0 flex flex-col h-full">
-              {selectedContact ? (
-                <>
-                  {/* Chat Header */}
-                  <div className="p-4 border-b border-border flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Avatar>
-                        <AvatarFallback className="bg-primary/10 text-primary">
-                          {selectedContact.name.substring(0, 2).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium">{selectedContact.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {selectedContact.phone_number}
-                        </p>
-                      </div>
-                    </div>
-                    <Button variant="ghost" size="icon">
-                      <MoreVertical className="w-5 h-5" />
-                    </Button>
-                  </div>
+                {/* Filter Tabs */}
+                <Tabs value={chatFilter} onValueChange={(v) => setChatFilter(v as any)} className="px-4">
+                  <TabsList className="grid w-full grid-cols-4 mb-3">
+                    <TabsTrigger value="all" className="text-xs">
+                      Semua
+                    </TabsTrigger>
+                    <TabsTrigger value="unread" className="text-xs">
+                      Unread
+                    </TabsTrigger>
+                    <TabsTrigger value="starred" className="text-xs">
+                      <Star className="w-3 h-3" />
+                    </TabsTrigger>
+                    <TabsTrigger value="archived" className="text-xs">
+                      <Archive className="w-3 h-3" />
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
 
-                  {/* Messages */}
-                  <ScrollArea className="flex-1 p-4">
-                    <div className="space-y-4">
-                      {messages.length === 0 && (
-                        <div className="text-center text-muted-foreground py-8">
-                          Belum ada pesan. Mulai percakapan!
-                        </div>
-                      )}
-                      {messages.map((message) => (
+                {/* Contact List */}
+                <ScrollArea className="flex-1">
+                  <div className="px-2">
+                    {filteredContacts.map((contact) => {
+                      const label = CHAT_LABELS.find(l => l.value === contact.label);
+
+                      return (
                         <div
-                          key={message.id}
-                          className={`flex ${
-                            message.sender === "user" ? "justify-end" : "justify-start"
+                          key={contact.id}
+                          onClick={() => setSelectedContact(contact)}
+                          className={`p-3 mb-1 rounded-lg cursor-pointer hover:bg-accent transition-colors ${
+                            selectedContact?.id === contact.id ? "bg-accent" : ""
                           }`}
                         >
-                          <div
-                            className={`max-w-[70%] rounded-lg p-3 ${
-                              message.sender === "user"
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted"
-                            }`}
-                          >
-                            <p className="text-sm">{message.content}</p>
-                            <p
-                              className={`text-xs mt-1 ${
-                                message.sender === "user"
-                                  ? "text-primary-foreground/70"
-                                  : "text-muted-foreground"
-                              }`}
-                            >
-                              {new Date(message.timestamp).toLocaleTimeString("id-ID", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </p>
+                          <div className="flex items-start gap-3">
+                            <Avatar className="h-10 w-10 flex-shrink-0">
+                              <AvatarFallback className="bg-primary/10 text-primary">
+                                {String(contact.name || 'U').substring(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2 mb-1">
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <p className="font-medium text-sm truncate">
+                                    {String(contact.name || 'Unknown')}
+                                  </p>
+                                  {contact.is_starred && (
+                                    <Star className="w-3 h-3 fill-yellow-500 text-yellow-500 flex-shrink-0" />
+                                  )}
+                                </div>
+                                {contact.unread_count && contact.unread_count > 0 && (
+                                  <Badge variant="destructive" className="text-xs h-5 px-1.5">
+                                    {contact.unread_count}
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground truncate mb-1">
+                                {String(contact.phone_number || '')}
+                              </p>
+                              {label && (
+                                <Badge
+                                  variant="secondary"
+                                  className={`text-xs ${label.color} text-white`}
+                                >
+                                  {label.label}
+                                </Badge>
+                              )}
+                              {contact.last_message && (
+                                <p className="text-xs text-muted-foreground truncate mt-1">
+                                  {String(contact.last_message)}
+                                </p>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
+                      );
+                    })}
+                    {filteredContacts.length === 0 && (
+                      <div className="p-8 text-center text-muted-foreground">
+                        <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                        <p className="text-sm">Tidak ada kontak ditemukan</p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
 
-                  {/* Message Input */}
-                  <form onSubmit={handleSendMessage} className="p-4 border-t border-border">
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Ketik pesan..."
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        className="flex-1"
+          {/* Chat Window - 5 columns */}
+          <div className="lg:col-span-5">
+            <Card className="h-[700px] flex flex-col">
+              <CardContent className="p-0 flex flex-col h-full">
+                {selectedContact ? (
+                  <>
+                    {/* Chat Header */}
+                    <div className="p-4 border-b border-border flex items-center justify-between">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <Avatar>
+                          <AvatarFallback className="bg-primary/10 text-primary">
+                            {String(selectedContact.name || 'U').substring(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium truncate">{String(selectedContact.name || 'Unknown')}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {String(selectedContact.phone_number || '')}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleToggleStar(selectedContact.id)}
+                        >
+                          <Star
+                            className={`w-4 h-4 ${
+                              selectedContact.is_starred
+                                ? "fill-yellow-500 text-yellow-500"
+                                : ""
+                            }`}
+                          />
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => setShowContactInfo(!showContactInfo)}
+                            >
+                              <Info className="w-4 h-4 mr-2" />
+                              Info Kontak
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            {CHAT_LABELS.map((label) => (
+                              <DropdownMenuItem
+                                key={label.value}
+                                onClick={() => handleSetLabel(selectedContact.id, label.value)}
+                              >
+                                <Tag className="w-4 h-4 mr-2" />
+                                Label: {label.label}
+                              </DropdownMenuItem>
+                            ))}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleArchiveChat(selectedContact.id)}
+                            >
+                              <Archive className="w-4 h-4 mr-2" />
+                              {selectedContact.is_archived ? "Unarchive" : "Archive"}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+
+                    {/* Messages */}
+                    <ScrollArea className="flex-1 p-4">
+                      <div className="space-y-4">
+                        {messages.length === 0 && (
+                          <div className="text-center text-muted-foreground py-12">
+                            <MessageSquare className="w-16 h-16 mx-auto mb-4 opacity-20" />
+                            <p className="font-medium mb-1">Belum ada percakapan</p>
+                            <p className="text-sm">Mulai kirim pesan ke {String(selectedContact.name || 'kontak ini')}</p>
+                          </div>
+                        )}
+                        {messages.map((message) => (
+                          <div
+                            key={message.id}
+                            className={`flex ${
+                              message.sender === "user" ? "justify-end" : "justify-start"
+                            }`}
+                          >
+                            <div
+                              className={`max-w-[75%] rounded-lg p-3 ${
+                                message.sender === "user"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted"
+                              }`}
+                            >
+                              {message.media_url && (
+                                <div className="mb-2">
+                                  {message.media_type === "image" ? (
+                                    <img
+                                      src={message.media_url}
+                                      alt="Media"
+                                      className="rounded max-w-full h-auto"
+                                    />
+                                  ) : (
+                                    <div className="flex items-center gap-2 p-2 bg-background/10 rounded">
+                                      <FileText className="w-4 h-4" />
+                                      <span className="text-xs">File attachment</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              <p className="text-sm break-words">{message.content}</p>
+                              <div className="flex items-center gap-1 mt-1">
+                                <p
+                                  className={`text-xs ${
+                                    message.sender === "user"
+                                      ? "text-primary-foreground/70"
+                                      : "text-muted-foreground"
+                                  }`}
+                                >
+                                  {new Date(message.timestamp).toLocaleTimeString("id-ID", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </p>
+                                {message.sender === "user" && (
+                                  <span
+                                    className={
+                                      message.sender === "user"
+                                        ? "text-primary-foreground/70"
+                                        : "text-muted-foreground"
+                                    }
+                                  >
+                                    {getMessageStatusIcon(message.status)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        <div ref={messagesEndRef} />
+                      </div>
+                    </ScrollArea>
+
+                    {/* Quick Replies Bar */}
+                    <div className="px-4 py-2 border-t border-border bg-muted/30">
+                      <div className="flex gap-2 overflow-x-auto">
+                        {quickReplies.slice(0, 3).map((reply) => (
+                          <Button
+                            key={reply.id}
+                            variant="outline"
+                            size="sm"
+                            className="flex-shrink-0"
+                            onClick={() => handleUseQuickReply(reply)}
+                          >
+                            <Zap className="w-3 h-3 mr-1" />
+                            {reply.name}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Message Input */}
+                    <form onSubmit={handleSendMessage} className="p-4 border-t border-border">
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Ketik pesan..."
+                          value={newMessage}
+                          onChange={(e) => setNewMessage(e.target.value)}
+                          className="flex-1"
+                        />
+                        <Button
+                          type="submit"
+                          className="bg-gradient-to-r from-primary to-secondary"
+                          disabled={!newMessage.trim()}
+                        >
+                          <Send className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </form>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">
+                    <MessageSquare className="w-20 h-20 mb-4 opacity-20" />
+                    <p className="font-medium text-lg mb-2">Selamat Datang di CRM Chat</p>
+                    <p className="text-sm text-center max-w-md">
+                      Pilih kontak dari daftar di sebelah kiri untuk memulai percakapan.
+                      Gunakan fitur label, notes, dan quick replies untuk mengelola customer dengan lebih baik.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Contact Info Sidebar - 3 columns */}
+          <div className="lg:col-span-3">
+            <Card className="h-[700px]">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <User className="w-5 h-5" />
+                  Info Kontak
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {selectedContact ? (
+                  <>
+                    {/* Contact Avatar and Name */}
+                    <div className="text-center pb-4 border-b">
+                      <Avatar className="h-20 w-20 mx-auto mb-3">
+                        <AvatarFallback className="bg-primary/10 text-primary text-2xl">
+                          {String(selectedContact.name || 'U').substring(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <p className="font-semibold text-lg">{String(selectedContact.name || 'Unknown')}</p>
+                      <p className="text-sm text-muted-foreground">{String(selectedContact.phone_number || '')}</p>
+                    </div>
+
+                    {/* Contact Details */}
+                    <div className="space-y-3">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Label</Label>
+                        <div className="mt-1">
+                          {selectedContact.label ? (
+                            <Badge
+                              className={
+                                CHAT_LABELS.find(l => l.value === selectedContact.label)?.color +
+                                " text-white"
+                              }
+                            >
+                              {CHAT_LABELS.find(l => l.value === selectedContact.label)?.label}
+                            </Badge>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">Belum ada label</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Bergabung Sejak</Label>
+                        <p className="text-sm mt-1">
+                          {selectedContact.created_at
+                            ? new Date(selectedContact.created_at).toLocaleDateString("id-ID", {
+                                day: "numeric",
+                                month: "long",
+                                year: "numeric",
+                              })
+                            : "-"}
+                        </p>
+                      </div>
+
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Status</Label>
+                        <div className="flex gap-2 mt-1">
+                          <Badge variant={selectedContact.is_starred ? "default" : "outline"}>
+                            <Star className="w-3 h-3 mr-1" />
+                            {selectedContact.is_starred ? "Starred" : "Not Starred"}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Notes Section */}
+                    <div className="pt-4 border-t">
+                      <Label className="flex items-center gap-2 mb-2">
+                        <StickyNote className="w-4 h-4" />
+                        Notes (Internal)
+                      </Label>
+                      <Textarea
+                        placeholder="Tambahkan catatan tentang kontak ini..."
+                        value={contactNotes}
+                        onChange={(e) => setContactNotes(e.target.value)}
+                        rows={6}
+                        className="resize-none text-sm"
                       />
                       <Button
-                        type="submit"
-                        className="bg-gradient-to-r from-primary to-secondary"
+                        onClick={handleSaveNotes}
+                        className="w-full mt-2"
+                        size="sm"
                       >
-                        <Send className="w-4 h-4" />
+                        Simpan Notes
                       </Button>
                     </div>
-                  </form>
-                </>
-              ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  Pilih kontak untuk memulai percakapan
-                </div>
-              )}
-            </CardContent>
-          </Card>
+
+                    {/* Quick Actions */}
+                    <div className="pt-4 border-t space-y-2">
+                      <Label className="text-xs text-muted-foreground">Quick Actions</Label>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start"
+                        size="sm"
+                        onClick={() => handleToggleStar(selectedContact.id)}
+                      >
+                        <Star className="w-4 h-4 mr-2" />
+                        {selectedContact.is_starred ? "Remove Star" : "Add Star"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start"
+                        size="sm"
+                        onClick={() => handleArchiveChat(selectedContact.id)}
+                      >
+                        <Archive className="w-4 h-4 mr-2" />
+                        {selectedContact.is_archived ? "Unarchive" : "Archive Chat"}
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center text-muted-foreground py-12">
+                    <User className="w-16 h-16 mx-auto mb-3 opacity-20" />
+                    <p className="text-sm">Pilih kontak untuk melihat info detail</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </Layout>
