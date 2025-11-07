@@ -15,7 +15,7 @@ import {
   FileText, User, MessageSquare, Clock, Check, CheckCheck,
   X, Plus, Edit, Trash2, AlertCircle, Info
 } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, startTransition, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
@@ -89,6 +89,7 @@ export const CrmChat = () => {
   const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [devices, setDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
   const [chatFilter, setChatFilter] = useState<"all" | "unread" | "starred" | "archived">("all");
   const [showContactInfo, setShowContactInfo] = useState(false);
   const [contactNotes, setContactNotes] = useState("");
@@ -108,13 +109,19 @@ export const CrmChat = () => {
 
   useEffect(() => {
     if (selectedDevice) {
-      fetchContacts();
+      // Use startTransition to avoid blocking UI
+      startTransition(() => {
+        fetchContacts();
+      });
     }
   }, [selectedDevice]);
 
   useEffect(() => {
     if (selectedContact) {
-      fetchMessages(selectedContact.id);
+      // Use startTransition for non-critical updates
+      startTransition(() => {
+        fetchMessages(selectedContact.id);
+      });
       setContactNotes(selectedContact.notes || "");
     } else {
       setMessages([]);
@@ -151,7 +158,7 @@ export const CrmChat = () => {
     }
   };
 
-  const fetchContacts = async () => {
+  const fetchContacts = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -168,7 +175,8 @@ export const CrmChat = () => {
         .select("*")
         .eq("user_id", user.id)
         .eq("device_id", selectedDevice)
-        .order("updated_at", { ascending: false });
+        .order("updated_at", { ascending: false })
+        .limit(100); // Limit for performance
 
       if (error) throw error;
 
@@ -184,7 +192,10 @@ export const CrmChat = () => {
           filter: `device_id=eq.${selectedDevice}`
         }, (payload) => {
           console.log('Conversation update:', payload);
-          fetchContacts(); // Refresh conversations
+          // Use startTransition to avoid blocking UI
+          startTransition(() => {
+            fetchContacts();
+          });
         })
         .subscribe();
 
@@ -197,7 +208,7 @@ export const CrmChat = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedDevice]);
 
   const fetchMessages = async (conversationId: string) => {
     try {
@@ -242,10 +253,15 @@ export const CrmChat = () => {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !selectedContact || !selectedDevice) {
-      toast.error("Pilih device dan kontak terlebih dahulu");
+    if (!newMessage.trim() || !selectedContact || !selectedDevice || sending) {
+      if (!selectedContact || !selectedDevice) {
+        toast.error("Pilih device dan kontak terlebih dahulu");
+      }
       return;
     }
+
+    // Prevent double submission
+    setSending(true);
 
     try {
       const messageContent = newMessage;
@@ -275,6 +291,8 @@ export const CrmChat = () => {
       console.error('Error sending message:', error);
       toast.error("Gagal mengirim pesan: " + (error.message || 'Unknown error'));
       setNewMessage(messageContent); // Restore message on error
+    } finally {
+      setSending(false);
     }
   };
 
@@ -421,20 +439,22 @@ export const CrmChat = () => {
     toast.success("Quick reply dihapus");
   };
 
-  const filteredContacts = contacts.filter((contact) => {
-    const matchesSearch =
-      String(contact.contact_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      String(contact.contact_phone || '').includes(searchQuery);
+  const filteredContacts = useMemo(() => {
+    return contacts.filter((contact) => {
+      const matchesSearch =
+        String(contact.contact_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        String(contact.contact_phone || '').includes(searchQuery);
 
-    const matchesFilter =
-      chatFilter === "all" ? !contact.is_archived :
-      chatFilter === "unread" ? (contact.unread_count || 0) > 0 && !contact.is_archived :
-      chatFilter === "starred" ? contact.is_starred && !contact.is_archived :
-      chatFilter === "archived" ? contact.is_archived :
-      true;
+      const matchesFilter =
+        chatFilter === "all" ? !contact.is_archived :
+        chatFilter === "unread" ? (contact.unread_count || 0) > 0 && !contact.is_archived :
+        chatFilter === "starred" ? contact.is_starred && !contact.is_archived :
+        chatFilter === "archived" ? contact.is_archived :
+        true;
 
-    return matchesSearch && matchesFilter;
-  });
+      return matchesSearch && matchesFilter;
+    });
+  }, [contacts, searchQuery, chatFilter]);
 
   const getMessageStatusIcon = (status?: string) => {
     switch (status) {
@@ -856,9 +876,15 @@ export const CrmChat = () => {
                         <Button
                           type="submit"
                           className="bg-gradient-to-r from-primary to-secondary"
-                          disabled={!newMessage.trim()}
+                          disabled={!newMessage.trim() || sending}
                         >
-                          <Send className="w-4 h-4" />
+                          {sending ? (
+                            <span className="flex items-center gap-2">
+                              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            </span>
+                          ) : (
+                            <Send className="w-4 h-4" />
+                          )}
                         </Button>
                       </div>
                     </form>
