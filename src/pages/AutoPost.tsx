@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Send, Clock, Users, Calendar, Smartphone, Edit, Power, PowerOff, History, RefreshCw, Loader2 } from "lucide-react";
+import { Plus, Trash2, Send, Clock, Users, Calendar, Smartphone, Edit, Power, PowerOff, History, RefreshCw, Loader2, Copy, BarChart3, Eye, Globe, Image as ImageIcon } from "lucide-react";
 import { useEffect, useState, startTransition, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -49,6 +49,9 @@ export default function AutoPost() {
   const [loading, setLoading] = useState(false); // Start false for instant UI
   const [syncing, setSyncing] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState<string>("");
+  const [editingSchedule, setEditingSchedule] = useState<AutoPostSchedule | null>(null);
+  const [viewingLogs, setViewingLogs] = useState<string | null>(null);
+  const [logs, setLogs] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     name: "",
     message: "",
@@ -395,6 +398,135 @@ export default function AutoPost() {
     }
   };
 
+  const handleEditSchedule = (schedule: AutoPostSchedule) => {
+    setEditingSchedule(schedule);
+    setSelectedDevice(schedule.device_id);
+    fetchGroups(schedule.device_id);
+    setFormData({
+      name: schedule.name,
+      message: schedule.message,
+      media_url: schedule.media_url || "",
+      target_groups: schedule.target_groups,
+      frequency: schedule.frequency,
+      schedule_time: schedule.schedule_time,
+      timezone: schedule.timezone || "Asia/Jakarta",
+      selected_days: schedule.selected_days || [0, 1, 2, 3, 4, 5, 6],
+      random_delay: schedule.random_delay || false,
+      delay_minutes: schedule.delay_minutes || 5,
+      is_active: schedule.is_active,
+    });
+  };
+
+  const handleUpdateSchedule = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!editingSchedule) return;
+
+    try {
+      const { error } = await supabase
+        .from("auto_post_schedules")
+        .update({
+          name: formData.name,
+          message: formData.message,
+          media_url: formData.media_url || null,
+          target_groups: formData.target_groups,
+          frequency: formData.frequency,
+          schedule_time: formData.schedule_time,
+          timezone: formData.timezone,
+          selected_days: formData.selected_days,
+          random_delay: formData.random_delay,
+          delay_minutes: formData.delay_minutes,
+          is_active: formData.is_active,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", editingSchedule.id);
+
+      if (error) throw error;
+
+      toast.success("Jadwal berhasil diperbarui!");
+      setEditingSchedule(null);
+      setFormData({
+        name: "",
+        message: "",
+        media_url: "",
+        target_groups: [],
+        frequency: "daily",
+        schedule_time: "09:00",
+        timezone: "Asia/Jakarta",
+        selected_days: [0, 1, 2, 3, 4, 5, 6],
+        random_delay: false,
+        delay_minutes: 5,
+        is_active: true,
+      });
+      fetchSchedules();
+    } catch (error: any) {
+      toast.error(error.message || "Gagal memperbarui jadwal");
+    }
+  };
+
+  const handleDuplicateSchedule = async (schedule: AutoPostSchedule) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const { error } = await supabase
+        .from("auto_post_schedules")
+        .insert({
+          user_id: user.id,
+          device_id: schedule.device_id,
+          name: `${schedule.name} (Copy)`,
+          message: schedule.message,
+          media_url: schedule.media_url,
+          target_groups: schedule.target_groups,
+          frequency: schedule.frequency,
+          schedule_time: schedule.schedule_time,
+          timezone: schedule.timezone,
+          selected_days: schedule.selected_days,
+          random_delay: schedule.random_delay,
+          delay_minutes: schedule.delay_minutes,
+          is_active: false, // Start as inactive
+        });
+
+      if (error) throw error;
+
+      toast.success("Jadwal berhasil diduplikasi!");
+      fetchSchedules();
+    } catch (error: any) {
+      toast.error(error.message || "Gagal menduplikasi jadwal");
+    }
+  };
+
+  const handleViewLogs = async (scheduleId: string) => {
+    setViewingLogs(scheduleId);
+    try {
+      const { data, error } = await supabase
+        .from("auto_post_logs")
+        .select("*")
+        .eq("schedule_id", scheduleId)
+        .order("sent_at", { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      setLogs(data || []);
+    } catch (error: any) {
+      toast.error("Gagal memuat log");
+      setLogs([]);
+    }
+  };
+
+  const formatNextSendTime = (schedule: AutoPostSchedule) => {
+    if (!schedule.is_active) return "Nonaktif";
+
+    // This would ideally come from next_send_at column
+    // For now, just show the schedule time
+    return `Hari ini pukul ${schedule.schedule_time} ${schedule.timezone || 'WIB'}`;
+  };
+
+  const getDayNames = (days: number[]) => {
+    const dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+    return days.map(d => dayNames[d]).join(', ');
+  };
+
   const stats = {
     total_schedules: schedules.length,
     active_schedules: schedules.filter(s => s.is_active).length,
@@ -435,19 +567,53 @@ export default function AutoPost() {
           </Card>
         </div>
 
-        {/* Create Schedule Form */}
+        {/* Create/Edit Schedule Form */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Plus className="w-5 h-5" />
-              Buat Jadwal Auto Post Baru
-            </CardTitle>
-            <CardDescription>
-              Atur pesan yang akan dikirim otomatis ke grup-grup WhatsApp
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  {editingSchedule ? (
+                    <><Edit className="w-5 h-5" />Edit Jadwal Auto Post</>
+                  ) : (
+                    <><Plus className="w-5 h-5" />Buat Jadwal Auto Post Baru</>
+                  )}
+                </CardTitle>
+                <CardDescription>
+                  {editingSchedule
+                    ? 'Perbarui pengaturan jadwal auto post'
+                    : 'Atur pesan yang akan dikirim otomatis ke grup-grup WhatsApp'}
+                </CardDescription>
+              </div>
+              {editingSchedule && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setEditingSchedule(null);
+                    setFormData({
+                      name: "",
+                      message: "",
+                      media_url: "",
+                      target_groups: [],
+                      frequency: "daily",
+                      schedule_time: "09:00",
+                      timezone: "Asia/Jakarta",
+                      selected_days: [0, 1, 2, 3, 4, 5, 6],
+                      random_delay: false,
+                      delay_minutes: 5,
+                      is_active: true,
+                    });
+                  }}
+                >
+                  Batal
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleCreateSchedule} className="space-y-6">
+            <form onSubmit={editingSchedule ? handleUpdateSchedule : handleCreateSchedule} className="space-y-6">
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <div className="space-y-2">
@@ -837,8 +1003,11 @@ export default function AutoPost() {
                 className="w-full"
                 disabled={formData.target_groups.length === 0}
               >
-                <Calendar className="w-4 h-4 mr-2" />
-                Buat Jadwal Auto Post
+                {editingSchedule ? (
+                  <><Edit className="w-4 h-4 mr-2" />Perbarui Jadwal</>
+                ) : (
+                  <><Calendar className="w-4 h-4 mr-2" />Buat Jadwal Auto Post</>
+                )}
               </Button>
             </form>
           </CardContent>
@@ -860,58 +1029,173 @@ export default function AutoPost() {
             schedules.map((schedule) => (
               <Card key={schedule.id} className="transition-all duration-300 ease-in-out hover:shadow-lg">
                 <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="text-lg">{schedule.name}</CardTitle>
-                      <CardDescription className="mt-1">
-                        {schedule.frequency === 'daily' && 'Setiap hari'}
-                        {schedule.frequency === 'weekly' && 'Setiap minggu'}
-                        {schedule.frequency === 'monthly' && 'Setiap bulan'}
-                        {' '}pukul {schedule.schedule_time}
-                      </CardDescription>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={schedule.is_active ? "default" : "secondary"}>
-                        {schedule.is_active ? "Aktif" : "Nonaktif"}
-                      </Badge>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <CardTitle className="text-lg">{schedule.name}</CardTitle>
+                        <Badge variant={schedule.is_active ? "default" : "secondary"} className="text-xs">
+                          {schedule.is_active ? "🟢 Aktif" : "⚪ Nonaktif"}
+                        </Badge>
+                      </div>
+
+                      <div className="space-y-1">
+                        <CardDescription className="flex items-center gap-1.5 text-xs">
+                          <Clock className="w-3 h-3" />
+                          {schedule.frequency === 'daily' && 'Setiap hari'}
+                          {schedule.frequency === 'weekly' && `Setiap ${getDayNames(schedule.selected_days || [0,1,2,3,4,5,6])}`}
+                          {schedule.frequency === 'monthly' && 'Setiap bulan'}
+                          {' '}pukul {schedule.schedule_time}
+                          {schedule.random_delay && ` ±${schedule.delay_minutes}m`}
+                        </CardDescription>
+
+                        <CardDescription className="flex items-center gap-1.5 text-xs">
+                          <Globe className="w-3 h-3" />
+                          {schedule.timezone || 'Asia/Jakarta'}
+                        </CardDescription>
+
+                        {(schedule.send_count || 0) > 0 && (
+                          <CardDescription className="flex items-center gap-1.5 text-xs">
+                            <BarChart3 className="w-3 h-3" />
+                            Terkirim: {schedule.send_count || 0}
+                            {(schedule.failed_count || 0) > 0 && ` • Gagal: ${schedule.failed_count}`}
+                          </CardDescription>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
+                    {/* Media preview */}
+                    {schedule.media_url && (
+                      <div className="relative">
+                        {schedule.media_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                          <img
+                            src={schedule.media_url}
+                            alt="Media"
+                            className="w-full max-h-48 object-cover rounded-lg"
+                          />
+                        ) : (
+                          <div className="p-3 bg-muted/50 rounded-lg flex items-center gap-2">
+                            <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                            <span className="text-xs text-muted-foreground truncate">{schedule.media_url}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Message */}
                     <div className="p-3 bg-muted/50 rounded-lg">
-                      <p className="text-sm whitespace-pre-wrap">{schedule.message}</p>
+                      <p className="text-sm whitespace-pre-wrap line-clamp-3">{schedule.message}</p>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Users className="w-4 h-4" />
-                        {schedule.target_groups.length} grup target
+
+                    {/* Info row */}
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                      <div className="flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5" />
+                        {schedule.target_groups.length} grup
                       </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleToggleActive(schedule.id, schedule.is_active)}
-                          title={schedule.is_active ? "Nonaktifkan" : "Aktifkan"}
-                        >
-                          {schedule.is_active ? (
-                            <PowerOff className="w-4 h-4 mr-1 text-orange-500" />
-                          ) : (
-                            <Power className="w-4 h-4 mr-1 text-green-500" />
-                          )}
-                          <span className="hidden sm:inline">
-                            {schedule.is_active ? "Nonaktifkan" : "Aktifkan"}
-                          </span>
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => handleDeleteSchedule(schedule.id, schedule.name)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          <span className="hidden sm:inline ml-1">Hapus</span>
-                        </Button>
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5" />
+                        {formatNextSendTime(schedule)}
                       </div>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex gap-2 flex-wrap">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleEditSchedule(schedule)}
+                        title="Edit jadwal"
+                      >
+                        <Edit className="w-3.5 h-3.5 sm:mr-1" />
+                        <span className="hidden sm:inline">Edit</span>
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleDuplicateSchedule(schedule)}
+                        title="Duplikasi jadwal"
+                      >
+                        <Copy className="w-3.5 h-3.5 sm:mr-1" />
+                        <span className="hidden sm:inline">Duplikasi</span>
+                      </Button>
+
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleViewLogs(schedule.id)}
+                            title="Lihat riwayat"
+                          >
+                            <History className="w-3.5 h-3.5 sm:mr-1" />
+                            <span className="hidden sm:inline">Riwayat</span>
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                          <DialogHeader>
+                            <DialogTitle>Riwayat Pengiriman: {schedule.name}</DialogTitle>
+                            <DialogDescription>
+                              Log pengiriman pesan auto post
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-2">
+                            {logs.length === 0 ? (
+                              <p className="text-sm text-muted-foreground text-center py-8">
+                                Belum ada riwayat pengiriman
+                              </p>
+                            ) : (
+                              logs.map((log) => (
+                                <div key={log.id} className="p-3 border rounded-lg space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm font-medium">{log.group_name}</span>
+                                    <Badge variant={log.status === 'sent' ? 'default' : 'destructive'} className="text-xs">
+                                      {log.status === 'sent' ? '✅ Terkirim' : '❌ Gagal'}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">
+                                    {new Date(log.sent_at).toLocaleString('id-ID')}
+                                  </p>
+                                  {log.error_message && (
+                                    <p className="text-xs text-destructive">{log.error_message}</p>
+                                  )}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+
+                      <div className="flex-1" />
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleToggleActive(schedule.id, schedule.is_active)}
+                        title={schedule.is_active ? "Nonaktifkan" : "Aktifkan"}
+                      >
+                        {schedule.is_active ? (
+                          <PowerOff className="w-3.5 h-3.5 sm:mr-1 text-orange-500" />
+                        ) : (
+                          <Power className="w-3.5 h-3.5 sm:mr-1 text-green-500" />
+                        )}
+                        <span className="hidden sm:inline">
+                          {schedule.is_active ? "Nonaktifkan" : "Aktifkan"}
+                        </span>
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => handleDeleteSchedule(schedule.id, schedule.name)}
+                        title="Hapus jadwal"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline ml-1">Hapus</span>
+                      </Button>
                     </div>
                   </div>
                 </CardContent>
