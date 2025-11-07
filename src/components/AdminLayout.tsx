@@ -10,7 +10,8 @@ import {
   LogOut,
   Menu,
   X,
-  Shield
+  Shield,
+  Video
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -35,6 +36,7 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
     { icon: LayoutDashboard, label: "Dashboard", path: "/admin/dashboard" },
     { icon: Users, label: "Kelola User", path: "/admin/users" },
     { icon: CreditCard, label: "Kelola Plan", path: "/admin/plans" },
+    { icon: Video, label: "Kelola Tutorial", path: "/admin/tutorials" },
     { icon: DollarSign, label: "Laporan Keuangan", path: "/admin/financial" },
   ];
 
