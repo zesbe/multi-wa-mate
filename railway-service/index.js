@@ -12,6 +12,8 @@ const os = require('os');
 const { handleQRCode } = require('./qr-handler');
 const simplePairingHandler = require('./pairing-handler-stable');
 const { checkAutoPostSchedules } = require('./auto-post-handler');
+const { setupCRMMessageListeners } = require('./crm-message-handler');
+const { createHTTPServer } = require('./http-server');
 
 // Supabase config dari environment variables
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -50,6 +52,14 @@ async function startService() {
   console.log('🚀 WhatsApp Baileys Service Started');
   console.log('📡 Using polling mechanism (optimized intervals)');
   console.log('🔗 Supabase URL:', supabaseUrl);
+
+  // Start HTTP server for CRM message sending
+  const httpServer = createHTTPServer(activeSockets);
+  const port = process.env.PORT || 3000;
+  httpServer.listen(port, () => {
+    console.log(`🌐 HTTP Server listening on port ${port}`);
+    console.log(`📡 Endpoints: /health, /send-message`);
+  });
 
   // Function to check devices
   async function checkDevices() {
@@ -403,6 +413,9 @@ async function connectWhatsApp(device, isRecovery = false) {
               console.log('✅ Device status updated to connected');
             }
           }
+
+          // Setup CRM message listeners to save all incoming/outgoing messages
+          setupCRMMessageListeners(sock, device.id, device.user_id);
 
           // Session will be saved via auth state 'creds.update' & keys.set handlers
         } catch (connError) {
