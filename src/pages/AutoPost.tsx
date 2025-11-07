@@ -229,13 +229,26 @@ export default function AutoPost() {
         body: { device_id: selectedDevice }
       });
 
-      if (error) throw error;
+      if (error) {
+        // Extract detailed error message from response
+        const errorMessage = data?.error || error.message || 'Unknown error';
+        console.error("Sync groups error:", error, "Response data:", data);
+        throw new Error(errorMessage);
+      }
 
       const groupCount = data?.groups_synced || 0;
-      toast.success(`✅ Berhasil sync ${groupCount} grup WhatsApp!`, {
-        duration: 4000,
-        description: 'Grup akan muncul dalam beberapa detik'
-      });
+
+      if (groupCount === 0) {
+        toast.info("ℹ️ Tidak ada grup WhatsApp ditemukan di device ini", {
+          duration: 4000,
+          description: 'Pastikan device sudah tergabung di grup WhatsApp'
+        });
+      } else {
+        toast.success(`✅ Berhasil sync ${groupCount} grup WhatsApp!`, {
+          duration: 4000,
+          description: 'Grup akan muncul dalam beberapa detik'
+        });
+      }
 
       // Refresh groups after a short delay to ensure database is updated
       setTimeout(() => {
@@ -244,7 +257,23 @@ export default function AutoPost() {
 
     } catch (error: any) {
       console.error("Sync groups error:", error);
-      toast.error(`Gagal sync grup: ${error.message || 'Unknown error'}`, { duration: 4000 });
+
+      // Display detailed error message
+      let errorMsg = error.message || 'Unknown error';
+
+      // Add helpful hints based on error message
+      if (errorMsg.includes('BAILEYS_SERVICE_URL')) {
+        errorMsg += '\n\nℹ️ Solusi: Set BAILEYS_SERVICE_URL di Supabase Edge Functions environment variables';
+      } else if (errorMsg.includes('Device not connected')) {
+        errorMsg += '\n\nℹ️ Solusi: Pastikan device dalam status "Connected"';
+      } else if (errorMsg.includes('Baileys service')) {
+        errorMsg += '\n\nℹ️ Solusi: Pastikan Railway service sudah running';
+      }
+
+      toast.error(`Gagal sync grup: ${errorMsg}`, {
+        duration: 6000,
+        style: { whiteSpace: 'pre-line' }
+      });
     } finally {
       setSyncing(false);
     }
