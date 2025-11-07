@@ -1,339 +1,279 @@
+const { createClient } = require('@supabase/supabase-js');
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // Fixed env var name
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
 /**
- * Stable Pairing Handler
- * Simplified and reliable pairing code implementation
+ * Process message variables - replace dynamic placeholders
  */
+function processMessageVariables(message, groupName = '') {
+  const now = new Date();
 
-const redis = require('./redis-client');
+  // Indonesian day names
+  const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const dayName = dayNames[now.getDay()];
 
-class StablePairingHandler {
-  constructor() {
-    this.activeSessions = new Map();
-  }
+  // Format time (HH:MM)
+  const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
-  /**
-   * Generate pairing code with retry mechanism
-   */
-  async generatePairingCode(sock, device, supabase) {
-    const deviceId = device.id;
-    const deviceName = device.device_name || 'Unknown';
+  // Format date (DD/MM/YYYY)
+  const dateStr = now.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-    try {
-      // Check if already has active session
-      if (this.hasActiveSession(deviceId)) {
-        console.log(`⏱️ [${deviceName}] Already has active pairing session`);
-        return false;
-      }
+  let processed = message;
 
-      // Mark session as active
-      this.activeSessions.set(deviceId, Date.now());
+  // Replace {{nama}} or [[NAME]] with group name
+  processed = processed.replace(/\{\{nama\}\}/gi, groupName);
+  processed = processed.replace(/\[\[NAME\]\]/gi, groupName);
 
-      // Get phone number
-      const { data, error } = await supabase
-        .from('devices')
-        .select('phone_for_pairing, connection_method')
-        .eq('id', deviceId)
-        .single();
+  // Replace time variables
+  processed = processed.replace(/\{\{waktu\}\}/gi, timeStr);
+  processed = processed.replace(/\{\{tanggal\}\}/gi, dateStr);
+  processed = processed.replace(/\{\{hari\}\}/gi, dayName);
 
-      if (error || !data || data.connection_method !== 'pairing' || !data.phone_for_pairing) {
-        console.log(`❌ [${deviceName}] No pairing phone configured`);
-        this.activeSessions.delete(deviceId);
-        return false;
-      }
+  // Handle random choices (text1|text2|text3)
+  const randomPattern = /\(([^)]+)\)/g;
+  processed = processed.replace(randomPattern, (match, group) => {
+    const choices = group.split('|').map(s => s.trim());
+    return choices[Math.floor(Math.random() * choices.length)];
+  });
 
-      // Format phone number
-      const phone = this.formatPhoneNumber(data.phone_for_pairing);
-      if (!phone) {
-        console.error(`❌ [${deviceName}] Invalid phone format: ${data.phone_for_pairing}`);
-        this.activeSessions.delete(deviceId);
-        await this.storePairingError(deviceId, `Invalid phone format: ${data.phone_for_pairing}`, supabase);
-        return false;
-      }
+  return processed;
+}
 
-      console.log(`📱 [${deviceName}] Requesting pairing code for: ${phone}`);
+/**
+ * Check and process auto-post schedules
+ */
+async function checkAutoPostSchedules(activeSockets) {
+  try {
+    const now = new Date();
 
-      // Wait for socket to be ready with proper state check
-      const isReady = await this.waitForSocket(sock, 10000);
-      if (!isReady) {
-        console.error(`❌ [${deviceName}] Socket not ready after 10 seconds`);
-        this.activeSessions.delete(deviceId);
-        await this.storePairingError(deviceId, 'Socket not ready for pairing', supabase);
-        return false;
-      }
+    // Fetch active schedules that are due for sending
+    const { data: schedules, error } = await supabase
+      .from('auto_post_schedules')
+      .select('*')
+      .eq('is_active', true)
+      .lte('next_send_at', now.toISOString());
 
-      // Request pairing code with retry mechanism
-      let pairingCode;
-      const maxRetries = 3;
-      let lastError = null;
-
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          console.log(`🔐 [${deviceName}] Attempt ${attempt}/${maxRetries} to get pairing code...`);
-
-          // Add small delay between retries
-          if (attempt > 1) {
-            await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
-          }
-
-          // Request pairing code with timeout
-          const codePromise = sock.requestPairingCode(phone);
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Request timeout after 30 seconds')), 30000)
-          );
-
-          pairingCode = await Promise.race([codePromise, timeoutPromise]);
-
-          // Success!
-          if (pairingCode) {
-            console.log(`✅ [${deviceName}] Got pairing code on attempt ${attempt}`);
-            break;
-          }
-
-        } catch (err) {
-          lastError = err;
-          console.error(`❌ [${deviceName}] Attempt ${attempt} failed:`, err.message);
-
-          // Handle rate limit - stop retrying
-          if (err.message?.includes('rate') || err.message?.includes('429') || err.output?.statusCode === 429) {
-            console.log(`🚫 [${deviceName}] Rate limited by WhatsApp`);
-            await this.storePairingError(deviceId, 'Rate limited. Please wait 60 seconds and try again.', supabase);
-            setTimeout(() => this.activeSessions.delete(deviceId), 60000);
-            return false;
-          }
-
-          // If last attempt, give up
-          if (attempt === maxRetries) {
-            console.error(`❌ [${deviceName}] All ${maxRetries} attempts failed`);
-            const errorMsg = err.message || 'Failed to generate pairing code';
-            await this.storePairingError(deviceId, errorMsg, supabase);
-            this.activeSessions.delete(deviceId);
-            return false;
-          }
-        }
-      }
-
-      // Validate pairing code
-      if (!pairingCode) {
-        console.error(`❌ [${deviceName}] No pairing code received after ${maxRetries} attempts`);
-        this.activeSessions.delete(deviceId);
-        await this.storePairingError(deviceId, lastError?.message || 'No pairing code received', supabase);
-        return false;
-      }
-
-      // Format the code properly
-      const formattedCode = this.formatPairingCode(pairingCode);
-      console.log(`✅ [${deviceName}] Pairing code: ${formattedCode}`);
-
-      // Store in Redis (optional cache)
-      try {
-        await redis.setPairingCode(deviceId, formattedCode, 600); // 10 min TTL
-        console.log(`📦 [${deviceName}] Code cached in Redis`);
-      } catch (err) {
-        // Redis error is not critical since we store in Supabase
-        console.warn(`⚠️ [${deviceName}] Redis cache failed (non-critical):`, err.message);
-      }
-
-      // Update database - this is the primary storage
-      await supabase
-        .from('devices')
-        .update({
-          pairing_code: formattedCode,
-          status: 'waiting_pairing',
-          error_message: null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', deviceId);
-
-      console.log(`✅ [${deviceName}] Pairing code saved to database`);
-
-      // Print instructions
-      this.printInstructions(deviceName, phone, formattedCode);
-
-      // Auto cleanup after 10 minutes (pairing code expires)
-      setTimeout(() => {
-        this.activeSessions.delete(deviceId);
-        console.log(`🧹 [${deviceName}] Pairing session cleared (timeout)`);
-      }, 600000);
-
-      return true;
-
-    } catch (error) {
-      console.error(`❌ [${deviceName}] Unexpected error:`, error);
-      this.activeSessions.delete(deviceId);
-      await this.storePairingError(deviceId, error.message || 'Unexpected error', supabase);
-      return false;
+    if (error) {
+      console.error('Error fetching auto-post schedules:', error);
+      return;
     }
-  }
 
-  /**
-   * Check if device has active session
-   */
-  hasActiveSession(deviceId) {
-    const session = this.activeSessions.get(deviceId);
-    if (!session) return false;
-    
-    // Session expires after 60 seconds
-    const age = Date.now() - session;
-    if (age > 60000) {
-      this.activeSessions.delete(deviceId);
-      return false;
+    if (!schedules || schedules.length === 0) {
+      return; // No schedules due
     }
-    
-    return true;
-  }
 
-  /**
-   * Format phone number to WhatsApp format
-   */
-  formatPhoneNumber(phone) {
-    if (!phone) return null;
-    
-    // Remove all non-digits
-    let digits = String(phone).replace(/\D/g, '');
-    
-    // Handle Indonesian numbers
-    if (digits.startsWith('0')) {
-      digits = '62' + digits.slice(1);
-    } else if (digits.startsWith('8') && digits.length <= 12) {
-      digits = '62' + digits;
-    } else if (!digits.startsWith('62') && digits.length <= 12) {
-      digits = '62' + digits;
-    }
-    
-    // Validate length
-    if (digits.length < 10 || digits.length > 15) {
-      return null;
-    }
-    
-    return digits;
-  }
+    console.log(`📅 Found ${schedules.length} auto-post schedule(s) to process`);
 
-  /**
-   * Format pairing code for display
-   */
-  formatPairingCode(code) {
-    if (!code) return null;
-    
-    // Clean the code
-    const cleaned = String(code).toUpperCase().replace(/[^A-Z0-9]/g, '');
-    
-    // Format as XXXX-XXXX for 8 chars
-    if (cleaned.length === 8) {
-      return `${cleaned.slice(0, 4)}-${cleaned.slice(4)}`;
-    }
-    
-    // Return as-is for other lengths
-    return cleaned;
-  }
-
-  /**
-   * Wait for socket to be ready with proper state checks
-   */
-  async waitForSocket(sock, maxWait = 10000) {
-    const start = Date.now();
-
-    console.log('⏳ Waiting for socket to be ready...');
-
-    while (Date.now() - start < maxWait) {
-      try {
-        // Check if socket exists
-        if (!sock) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-          continue;
-        }
-
-        // Check if requestPairingCode method exists
-        if (typeof sock.requestPairingCode !== 'function') {
-          await new Promise(resolve => setTimeout(resolve, 500));
-          continue;
-        }
-
-        // Check websocket connection state
-        // WebSocket.OPEN = 1 means connection is ready
-        if (sock.ws && sock.ws.readyState === 1) {
-          console.log('✅ Socket is ready (WebSocket OPEN)');
-          return true;
-        }
-
-        // Check alternative: if auth state has creds
-        if (sock.authState && sock.authState.creds) {
-          console.log('✅ Socket is ready (Auth state available)');
-          return true;
-        }
-
-        // Log current state for debugging
-        const wsState = sock.ws?.readyState;
-        const wsStateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
-        console.log(`⏳ Socket state: WebSocket=${wsStateNames[wsState] || 'N/A'}, waiting...`);
-
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-      } catch (err) {
-        console.log('⚠️ Error checking socket state:', err.message);
-        await new Promise(resolve => setTimeout(resolve, 500));
+    // Filter schedules that have connected devices
+    for (const schedule of schedules) {
+      // Check if device socket exists and is connected
+      const socket = activeSockets.get(schedule.device_id);
+      if (socket && socket.user) {
+        await processAutoPostSchedule(schedule, activeSockets);
+      } else {
+        console.log(`⏭️ Skipping schedule "${schedule.name}" - device not connected`);
       }
     }
 
-    console.error('❌ Socket not ready after timeout');
-    return false;
-  }
-
-  /**
-   * Store error message
-   */
-  async storePairingError(deviceId, message, supabase) {
-    try {
-      await supabase
-        .from('devices')
-        .update({
-          status: 'error',
-          error_message: message,
-          pairing_code: null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', deviceId);
-    } catch (err) {
-      console.error('Failed to store error:', err);
-    }
-  }
-
-  /**
-   * Print pairing instructions
-   */
-  printInstructions(deviceName, phone, code) {
-    console.log('\n' + '='.repeat(50));
-    console.log(`📱 DEVICE: ${deviceName}`);
-    console.log(`📞 PHONE: ${phone}`);
-    console.log(`🔑 CODE: ${code}`);
-    console.log('='.repeat(50));
-    console.log('Instructions:');
-    console.log('1. Open WhatsApp on phone number above');
-    console.log('2. Go to Settings → Linked Devices');
-    console.log('3. Tap "Link a Device"');
-    console.log('4. Select "Link with phone number"'); 
-    console.log('5. Enter the code above');
-    console.log('='.repeat(50) + '\n');
-  }
-
-  /**
-   * Clear all sessions
-   */
-  clearAll() {
-    const count = this.activeSessions.size;
-    this.activeSessions.clear();
-    if (count > 0) {
-      console.log(`🧹 Cleared ${count} pairing sessions`);
-    }
-  }
-
-  /**
-   * Clear specific device session
-   */
-  clearDevice(deviceId) {
-    if (this.activeSessions.delete(deviceId)) {
-      console.log(`🧹 Cleared pairing session for device: ${deviceId}`);
-    }
+  } catch (error) {
+    console.error('Error in checkAutoPostSchedules:', error);
   }
 }
 
-// Export singleton instance
-module.exports = new StablePairingHandler();
+/**
+ * Process a single auto-post schedule
+ */
+async function processAutoPostSchedule(schedule, activeSockets) {
+  try {
+    console.log(`📤 Processing auto-post: ${schedule.name} (${schedule.id})`);
+
+    const socket = activeSockets.get(schedule.device_id);
+
+    if (!socket) {
+      console.error(`❌ Socket not found for device: ${schedule.device_id}`);
+      return;
+    }
+
+    // Fetch target groups
+    const { data: groups, error: groupsError } = await supabase
+      .from('contacts')
+      .select('*')
+      .in('id', schedule.target_groups)
+      .eq('is_group', true);
+
+    if (groupsError || !groups || groups.length === 0) {
+      console.error('Error fetching groups or no groups found:', groupsError);
+      return;
+    }
+
+    console.log(`📨 Sending to ${groups.length} group(s)...`);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    // Send to each group
+    for (const group of groups) {
+      try {
+        // Process message with variables
+        const processedMessage = processMessageVariables(
+          schedule.message,
+          group.name || group.phone_number
+        );
+
+        // Format group JID (group WhatsApp ID)
+        const groupJid = group.phone_number.includes('@g.us')
+          ? group.phone_number
+          : `${group.phone_number}@g.us`;
+
+        // Prepare message content
+        let messageContent;
+
+        if (schedule.media_url) {
+          // Send with media
+          try {
+            const response = await fetch(schedule.media_url);
+            const buffer = await response.arrayBuffer();
+            const mediaBuffer = Buffer.from(buffer);
+
+            // Determine media type from URL
+            const ext = schedule.media_url.toLowerCase().split('.').pop().split('?')[0];
+
+            if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+              messageContent = {
+                image: mediaBuffer,
+                caption: processedMessage
+              };
+            } else if (['mp4', 'mov', 'avi'].includes(ext)) {
+              messageContent = {
+                video: mediaBuffer,
+                caption: processedMessage
+              };
+            } else {
+              // Fallback to text if media type unknown
+              messageContent = { text: processedMessage };
+            }
+          } catch (mediaError) {
+            console.error(`⚠️ Failed to load media, sending text only:`, mediaError.message);
+            messageContent = { text: processedMessage };
+          }
+        } else {
+          // Text only
+          messageContent = { text: processedMessage };
+        }
+
+        // Send message via Baileys
+        await socket.sendMessage(groupJid, messageContent);
+
+        // Log success
+        await supabase.from('auto_post_logs').insert({
+          schedule_id: schedule.id,
+          group_id: group.id,
+          group_name: group.name || group.phone_number,
+          message_sent: processedMessage,
+          status: 'sent',
+          sent_at: new Date().toISOString()
+        });
+
+        successCount++;
+        console.log(`✅ Sent to group: ${group.name || group.phone_number}`);
+
+        // Calculate delay (with random variation if enabled)
+        let delay = 2000; // Base delay 2 seconds
+
+        if (schedule.random_delay && schedule.delay_minutes) {
+          // Add random variation in milliseconds
+          const randomMs = Math.random() * (schedule.delay_minutes * 60 * 1000);
+          delay += randomMs;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, delay));
+
+      } catch (error) {
+        failCount++;
+        console.error(`❌ Failed to send to group ${group.name}:`, error.message);
+
+        // Log failure
+        await supabase.from('auto_post_logs').insert({
+          schedule_id: schedule.id,
+          group_id: group.id,
+          group_name: group.name || group.phone_number,
+          message_sent: schedule.message,
+          status: 'failed',
+          error_message: error.message,
+          sent_at: new Date().toISOString()
+        });
+      }
+    }
+
+    // Update schedule's last_sent_at and statistics (trigger will auto-calculate next_send_at)
+    const currentSendCount = schedule.send_count || 0;
+    const currentFailCount = schedule.failed_count || 0;
+
+    await supabase
+      .from('auto_post_schedules')
+      .update({
+        last_sent_at: new Date().toISOString(),
+        send_count: currentSendCount + successCount,
+        failed_count: currentFailCount + failCount
+      })
+      .eq('id', schedule.id);
+
+    console.log(`✨ Auto-post completed: ${successCount} success, ${failCount} failed`);
+
+  } catch (error) {
+    console.error('Error processing auto-post schedule:', error);
+  }
+}
+
+/**
+ * Get auto-post statistics for a user
+ */
+async function getAutoPostStats(userId) {
+  try {
+    // Get total schedules
+    const { count: totalSchedules } = await supabase
+      .from('auto_post_schedules')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+
+    // Get active schedules
+    const { count: activeSchedules } = await supabase
+      .from('auto_post_schedules')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('is_active', true);
+
+    // Get today's sent count
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const { count: todaySent } = await supabase
+      .from('auto_post_logs')
+      .select('*, auto_post_schedules!inner(user_id)', { count: 'exact', head: true })
+      .eq('auto_post_schedules.user_id', userId)
+      .eq('status', 'sent')
+      .gte('sent_at', today.toISOString());
+
+    return {
+      totalSchedules: totalSchedules || 0,
+      activeSchedules: activeSchedules || 0,
+      todaySent: todaySent || 0
+    };
+  } catch (error) {
+    console.error('Error getting auto-post stats:', error);
+    return {
+      totalSchedules: 0,
+      activeSchedules: 0,
+      todaySent: 0
+    };
+  }
+}
+
+module.exports = {
+  checkAutoPostSchedules,
+  processAutoPostSchedule,
+  getAutoPostStats,
+  processMessageVariables
+};
