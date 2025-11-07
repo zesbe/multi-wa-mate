@@ -117,6 +117,13 @@ export const Sidebar = ({ isOpen = false, onClose }: SidebarProps = {}) => {
     const isActive = location.pathname === pathWithoutQuery &&
       location.search === pathQuery;
 
+    // Only close sidebar on mobile (when overlay is open)
+    const handleClick = () => {
+      if (open) {
+        handleClose();
+      }
+    };
+
     return (
       <Link
         to={path}
@@ -125,7 +132,7 @@ export const Sidebar = ({ isOpen = false, onClose }: SidebarProps = {}) => {
           "hover:bg-sidebar-accent",
           isActive && "bg-gradient-to-r from-primary/10 to-secondary/10 border-l-2 border-primary"
         )}
-        onClick={handleClose}
+        onClick={handleClick}
         title={!isExpanded ? label : undefined}
       >
         <Icon
