@@ -6,8 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Send, Clock, Users, Calendar, Smartphone, Edit, Power, PowerOff, History } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Plus, Trash2, Send, Clock, Users, Calendar, Smartphone, Edit, Power, PowerOff, History, RefreshCw, Loader2 } from "lucide-react";
+import { useEffect, useState, startTransition, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -40,7 +40,8 @@ export default function AutoPost() {
   const [schedules, setSchedules] = useState<AutoPostSchedule[]>([]);
   const [groups, setGroups] = useState<Contact[]>([]);
   const [devices, setDevices] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Start false for instant UI
+  const [syncing, setSyncing] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [formData, setFormData] = useState({
     name: "",
@@ -56,7 +57,7 @@ export default function AutoPost() {
     fetchSchedules();
 
     // Realtime subscription for schedules
-    const channel = supabase
+    const scheduleChannel = supabase
       .channel('auto-post-schedules-changes')
       .on(
         'postgres_changes',
@@ -66,16 +67,65 @@ export default function AutoPost() {
           table: 'auto_post_schedules'
         },
         (payload) => {
-          console.log('Auto-post schedule update:', payload);
-          fetchSchedules(); // Refresh list
+          console.log('🔄 Auto-post schedule update:', payload.eventType);
+
+          startTransition(() => {
+            if (payload.eventType === 'INSERT') {
+              const newSchedule = payload.new as AutoPostSchedule;
+              setSchedules(prev => [newSchedule, ...prev]);
+            } else if (payload.eventType === 'UPDATE') {
+              const updated = payload.new as AutoPostSchedule;
+              setSchedules(prev => prev.map(s => s.id === updated.id ? updated : s));
+            } else if (payload.eventType === 'DELETE') {
+              const deletedId = payload.old?.id;
+              setSchedules(prev => prev.filter(s => s.id !== deletedId));
+            }
+          });
+        }
+      )
+      .subscribe();
+
+    // Realtime subscription for contacts/groups
+    const contactsChannel = supabase
+      .channel('contacts-groups-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'contacts'
+        },
+        (payload) => {
+          console.log('🔄 Contacts/Groups update:', payload.eventType);
+
+          const contact = (payload.new || payload.old) as Contact;
+
+          // Only update if it's a group and belongs to selected device
+          if (contact.is_group && contact.device_id === selectedDevice) {
+            startTransition(() => {
+              if (payload.eventType === 'INSERT') {
+                const newGroup = payload.new as Contact;
+                setGroups(prev => [...prev, newGroup].sort((a, b) =>
+                  (a.name || a.phone_number).localeCompare(b.name || b.phone_number)
+                ));
+              } else if (payload.eventType === 'UPDATE') {
+                const updated = payload.new as Contact;
+                setGroups(prev => prev.map(g => g.id === updated.id ? updated : g));
+              } else if (payload.eventType === 'DELETE') {
+                const deletedId = payload.old?.id;
+                setGroups(prev => prev.filter(g => g.id !== deletedId));
+              }
+            });
+          }
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(scheduleChannel);
+      supabase.removeChannel(contactsChannel);
     };
-  }, []);
+  }, [selectedDevice]);
 
   useEffect(() => {
     if (selectedDevice) {
@@ -93,16 +143,18 @@ export default function AutoPost() {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setDevices(data || []);
-      
-      // Auto-select first device if available
-      if (data && data.length > 0 && !selectedDevice) {
-        setSelectedDevice(data[0].id);
-      }
+
+      startTransition(() => {
+        setDevices(data || []);
+
+        // Auto-select first connected device if available
+        if (data && data.length > 0 && !selectedDevice) {
+          const connectedDevice = data.find(d => d.status === 'connected');
+          setSelectedDevice(connectedDevice ? connectedDevice.id : data[0].id);
+        }
+      });
     } catch (error: any) {
       toast.error("Gagal memuat device");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -116,7 +168,10 @@ export default function AutoPost() {
         .order("name");
 
       if (error) throw error;
-      setGroups(data || []);
+
+      startTransition(() => {
+        setGroups(data || []);
+      });
     } catch (error: any) {
       toast.error("Gagal memuat grup WhatsApp");
     }
@@ -130,18 +185,68 @@ export default function AutoPost() {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      
-      // Transform data to match interface
-      const transformedData = (data || []).map((item: any) => ({
-        ...item,
-        target_groups: Array.isArray(item.target_groups) 
-          ? item.target_groups 
-          : []
-      }));
-      
-      setSchedules(transformedData);
+
+      startTransition(() => {
+        // Transform data to match interface
+        const transformedData = (data || []).map((item: any) => ({
+          ...item,
+          target_groups: Array.isArray(item.target_groups)
+            ? item.target_groups
+            : []
+        }));
+
+        setSchedules(transformedData);
+      });
     } catch (error: any) {
       toast.error("Gagal memuat jadwal");
+    }
+  };
+
+  // Sync groups from WhatsApp/Baileys to Supabase
+  const handleSyncGroups = async () => {
+    if (!selectedDevice) {
+      toast.error("Pilih device terlebih dahulu");
+      return;
+    }
+
+    const device = devices.find(d => d.id === selectedDevice);
+    if (!device) {
+      toast.error("Device tidak ditemukan");
+      return;
+    }
+
+    if (device.status !== 'connected') {
+      toast.error("Device harus dalam status terhubung untuk sync grup");
+      return;
+    }
+
+    setSyncing(true);
+    toast.info("Memulai sync grup WhatsApp...", { duration: 2000 });
+
+    try {
+      // Call edge function to sync groups from Baileys
+      const { data, error } = await supabase.functions.invoke('sync-whatsapp-groups', {
+        body: { device_id: selectedDevice }
+      });
+
+      if (error) throw error;
+
+      const groupCount = data?.groups_synced || 0;
+      toast.success(`✅ Berhasil sync ${groupCount} grup WhatsApp!`, {
+        duration: 4000,
+        description: 'Grup akan muncul dalam beberapa detik'
+      });
+
+      // Refresh groups after a short delay to ensure database is updated
+      setTimeout(() => {
+        fetchGroups(selectedDevice);
+      }, 1000);
+
+    } catch (error: any) {
+      console.error("Sync groups error:", error);
+      toast.error(`Gagal sync grup: ${error.message || 'Unknown error'}`, { duration: 4000 });
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -420,26 +525,74 @@ export default function AutoPost() {
               </div>
 
               <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  Pilih Grup Target ({formData.target_groups.length} dipilih)
-                </Label>
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    Pilih Grup Target ({formData.target_groups.length} dipilih)
+                  </Label>
+                  {selectedDevice && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSyncGroups}
+                      disabled={syncing}
+                      className="transition-all duration-200"
+                    >
+                      {syncing ? (
+                        <>
+                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                          Syncing...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-3 h-3 mr-1" />
+                          Sync Grup
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-y-auto p-4 border rounded-lg bg-muted/30">
                   {!selectedDevice ? (
                     <div className="col-span-full text-center py-8 text-muted-foreground">
-                      Pilih device terlebih dahulu untuk melihat grup WhatsApp
+                      <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                      <p>Pilih device terlebih dahulu untuk melihat grup WhatsApp</p>
                     </div>
                   ) : groups.length === 0 ? (
-                    <div className="col-span-full text-center py-8 text-muted-foreground">
-                      Tidak ada grup WhatsApp di device ini. Sync kontak terlebih dahulu.
+                    <div className="col-span-full text-center py-8 space-y-3">
+                      <Users className="w-12 h-12 mx-auto text-muted-foreground opacity-50" />
+                      <p className="text-muted-foreground">
+                        Tidak ada grup WhatsApp di device ini
+                      </p>
+                      <Button
+                        type="button"
+                        variant="default"
+                        size="sm"
+                        onClick={handleSyncGroups}
+                        disabled={syncing}
+                        className="mx-auto"
+                      >
+                        {syncing ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Sedang Sync Grup...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            Sync Grup WhatsApp Sekarang
+                          </>
+                        )}
+                      </Button>
                     </div>
                   ) : (
                     groups.map((group) => (
                       <Card
                         key={group.id}
-                        className={`cursor-pointer transition-all hover:shadow-md ${
+                        className={`cursor-pointer transition-all duration-300 ease-in-out hover:shadow-md hover:scale-105 ${
                           formData.target_groups.includes(group.id)
-                            ? "border-primary bg-primary/5"
+                            ? "border-primary bg-primary/5 shadow-sm"
                             : ""
                         }`}
                         onClick={() => handleToggleGroup(group.id)}
@@ -493,7 +646,7 @@ export default function AutoPost() {
             </Card>
           ) : (
             schedules.map((schedule) => (
-              <Card key={schedule.id}>
+              <Card key={schedule.id} className="transition-all duration-300 ease-in-out hover:shadow-lg">
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
