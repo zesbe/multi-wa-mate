@@ -24,7 +24,7 @@ import {
   X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
@@ -86,16 +86,21 @@ export const Sidebar = ({ isOpen = false, onClose }: SidebarProps = {}) => {
   }, []);
 
   // Restore scroll position when component mounts or location changes
-  useEffect(() => {
+  // Use useLayoutEffect for synchronous execution before browser paint
+  useLayoutEffect(() => {
     const scrollContainer = scrollContainerRef.current;
     if (!scrollContainer) return;
 
     const savedPosition = sessionStorage.getItem('sidebar-scroll-position');
     if (savedPosition) {
-      // Use setTimeout to ensure the DOM is ready
-      setTimeout(() => {
-        scrollContainer.scrollTop = parseInt(savedPosition, 10);
-      }, 0);
+      // Restore immediately without animation for instant positioning
+      const scrollTop = parseInt(savedPosition, 10);
+      scrollContainer.style.scrollBehavior = 'auto';
+      scrollContainer.scrollTop = scrollTop;
+      // Re-enable smooth scrolling after restoration
+      requestAnimationFrame(() => {
+        scrollContainer.style.scrollBehavior = '';
+      });
     }
   }, [location.pathname]);
 
