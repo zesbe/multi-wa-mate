@@ -63,75 +63,91 @@ serve(async (req) => {
       );
     }
 
-    // TODO: In production, this should call the actual Baileys backend service
-    // to fetch real WhatsApp groups. For now, we'll demonstrate the structure.
-
-    // TEMPORARY: Fetch groups from Baileys backend
-    // In a real implementation, this would make a request to your Node.js Baileys service
-    // const groups = await fetchGroupsFromBaileys(device_id, device.session_data);
-
-    // For demonstration, let's check if there are sample groups in the environment
-    // or create a way to test this function
-    let groups: GroupInfo[] = [];
-
-    // Try to fetch from an external Baileys service if configured
+    // Fetch real WhatsApp groups from Baileys service
     const baileysServiceUrl = Deno.env.get('BAILEYS_SERVICE_URL');
 
-    if (baileysServiceUrl) {
-      try {
-        const url = `${baileysServiceUrl}/api/groups/${device_id}`;
-        console.log(`🔗 Fetching groups from: ${url}`);
-
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${device.api_key}`,
-            'Content-Type': 'application/json',
-            'X-Device-ID': device_id,
-          },
-          timeout: 10000, // 10 second timeout
-        });
-
-        console.log(`📡 Response status: ${response.status}`);
-
-        if (response.ok) {
-          const data = await response.json();
-          groups = data.groups || data.data || [];
-          console.log(`✅ Fetched ${groups.length} groups from Baileys service`);
-        } else {
-          const errorText = await response.text();
-          console.error('Failed to fetch groups from Baileys service:', response.status, errorText);
+    if (!baileysServiceUrl) {
+      console.error('❌ BAILEYS_SERVICE_URL not configured');
+      return new Response(
+        JSON.stringify({
+          error: "BAILEYS_SERVICE_URL not configured. Please set this environment variable to sync groups.",
+          groups_synced: 0,
+          total_groups: 0
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
-      } catch (error) {
-        console.error('Error fetching from Baileys service:', error);
-      }
-    } else {
-      console.log('⚠️ BAILEYS_SERVICE_URL not configured, using sample groups');
+      );
     }
 
-    // If no external service or it failed, create sample groups for testing
-    if (groups.length === 0) {
-      // Create sample groups for demonstration
-      // In production, remove this and only use real Baileys data
-      groups = [
-        {
-          id: `${device_id}@g.us`,
-          name: "Grup Keluarga",
-          participants: 8
-        },
-        {
-          id: `${device_id}-1@g.us`,
-          name: "Tim Kerja",
-          participants: 15
-        },
-        {
-          id: `${device_id}-2@g.us`,
-          name: "Komunitas",
-          participants: 32
-        }
-      ];
+    let groups: GroupInfo[] = [];
 
-      console.log('Using sample groups for demonstration. Configure BAILEYS_SERVICE_URL for real data.');
+    try {
+      const url = `${baileysServiceUrl}/api/groups/${device_id}`;
+      console.log(`🔗 Fetching groups from: ${url}`);
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${device.api_key}`,
+          'Content-Type': 'application/json',
+          'X-Device-ID': device_id,
+        },
+        timeout: 10000, // 10 second timeout
+      });
+
+      console.log(`📡 Response status: ${response.status}`);
+
+      if (response.ok) {
+        const data = await response.json();
+        groups = data.groups || data.data || [];
+        console.log(`✅ Fetched ${groups.length} groups from Baileys service`);
+      } else {
+        const errorText = await response.text();
+        console.error('Failed to fetch groups from Baileys service:', response.status, errorText);
+        return new Response(
+          JSON.stringify({
+            error: `Failed to fetch groups from Baileys service: ${response.status} ${errorText}`,
+            groups_synced: 0,
+            total_groups: 0
+          }),
+          {
+            status: 502,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+      }
+    } catch (error) {
+      console.error('Error fetching from Baileys service:', error);
+      return new Response(
+        JSON.stringify({
+          error: `Error connecting to Baileys service: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          groups_synced: 0,
+          total_groups: 0
+        }),
+        {
+          status: 502,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // If no groups found, return success with 0 count
+    if (groups.length === 0) {
+      console.log('ℹ️ No WhatsApp groups found for this device');
+      return new Response(
+        JSON.stringify({
+          success: true,
+          groups_synced: 0,
+          total_groups: 0,
+          message: 'No WhatsApp groups found for this device',
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
     }
 
     // Sync groups to database
