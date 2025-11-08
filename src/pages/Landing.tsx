@@ -21,7 +21,8 @@ import {
   Smartphone,
   Mail,
   Phone,
-  MapPin
+  MapPin,
+  Menu
 } from "lucide-react";
 import AOS from 'aos';
 import 'aos/dist/aos.css';
@@ -38,6 +39,8 @@ const Landing = () => {
   const [isReady, setIsReady] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [parallaxOffset, setParallaxOffset] = useState(0);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Dynamic content from database
   const [aboutData, setAboutData] = useState({ title: '', content: '' });
@@ -69,11 +72,19 @@ const Landing = () => {
 
       // Calculate parallax offset (smoother scrolling for background)
       setParallaxOffset(scrollTop * 0.5);
+
+      // Set navbar scrolled state for backdrop effect
+      setIsScrolled(scrollTop > 20);
+
+      // Close mobile menu on scroll
+      if (mobileMenuOpen) {
+        setMobileMenuOpen(false);
+      }
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [mobileMenuOpen]);
 
 
   const fetchLandingContent = async () => {
@@ -132,6 +143,7 @@ const Landing = () => {
     const element = document.getElementById(sectionId);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setMobileMenuOpen(false); // Close mobile menu after navigation
     }
   };
 
@@ -358,40 +370,146 @@ const Landing = () => {
         />
       </div>
 
+      {/* Sticky Navigation Bar */}
+      <nav
+        className={`fixed top-0 left-0 right-0 z-40 transition-all duration-300 ${
+          isScrolled
+            ? 'bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg shadow-lg border-b border-gray-200 dark:border-gray-800'
+            : 'bg-transparent'
+        }`}
+      >
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center py-3 sm:py-4">
+            {/* Logo */}
+            <div className="flex items-center gap-2 sm:gap-3 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+              <img
+                src="/icon-512.png"
+                alt="HalloWa Logo"
+                className="w-14 h-14 sm:w-16 sm:h-16 object-contain drop-shadow-lg hover:scale-105 transition-transform duration-300"
+              />
+              <span className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
+                HalloWa
+              </span>
+            </div>
+
+            {/* Desktop Navigation */}
+            <div className="hidden lg:flex gap-8 items-center">
+              <button
+                onClick={() => scrollToSection('about')}
+                className="text-gray-700 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors font-medium"
+              >
+                Tentang
+              </button>
+              <button
+                onClick={() => scrollToSection('features')}
+                className="text-gray-700 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors font-medium"
+              >
+                Fitur
+              </button>
+              <button
+                onClick={() => scrollToSection('pricing')}
+                className="text-gray-700 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors font-medium"
+              >
+                Harga
+              </button>
+              <button
+                onClick={() => scrollToSection('contact')}
+                className="text-gray-700 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors font-medium"
+              >
+                Kontak
+              </button>
+            </div>
+
+            {/* Desktop CTA Buttons */}
+            <div className="hidden lg:flex gap-3">
+              <Button
+                variant="ghost"
+                onClick={() => navigate("/auth")}
+                className="font-medium"
+              >
+                Login
+              </Button>
+              <Button
+                onClick={() => navigate("/auth")}
+                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 shadow-lg shadow-green-500/30 font-medium"
+              >
+                Get Started
+              </Button>
+            </div>
+
+            {/* Mobile Menu Button */}
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="lg:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              aria-label="Toggle menu"
+            >
+              {mobileMenuOpen ? (
+                <X className="w-6 h-6 text-gray-700 dark:text-gray-300" />
+              ) : (
+                <Menu className="w-6 h-6 text-gray-700 dark:text-gray-300" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Menu Overlay */}
+        <div
+          className={`lg:hidden fixed inset-0 top-[73px] bg-white dark:bg-gray-900 transition-all duration-300 ${
+            mobileMenuOpen
+              ? 'opacity-100 pointer-events-auto'
+              : 'opacity-0 pointer-events-none'
+          }`}
+        >
+          <div className="container mx-auto px-4 py-6">
+            <div className="flex flex-col gap-4">
+              <button
+                onClick={() => scrollToSection('about')}
+                className="text-left py-3 px-4 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 font-medium transition-colors"
+              >
+                Tentang
+              </button>
+              <button
+                onClick={() => scrollToSection('features')}
+                className="text-left py-3 px-4 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 font-medium transition-colors"
+              >
+                Fitur
+              </button>
+              <button
+                onClick={() => scrollToSection('pricing')}
+                className="text-left py-3 px-4 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 font-medium transition-colors"
+              >
+                Harga
+              </button>
+              <button
+                onClick={() => scrollToSection('contact')}
+                className="text-left py-3 px-4 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 font-medium transition-colors"
+              >
+                Kontak
+              </button>
+
+              <div className="border-t border-gray-200 dark:border-gray-700 my-4"></div>
+
+              <Button
+                variant="outline"
+                onClick={() => { navigate("/auth"); setMobileMenuOpen(false); }}
+                className="w-full justify-center font-medium"
+              >
+                Login
+              </Button>
+              <Button
+                onClick={() => { navigate("/auth"); setMobileMenuOpen(false); }}
+                className="w-full justify-center bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 shadow-lg shadow-green-500/30 font-medium"
+              >
+                Get Started
+              </Button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
       {/* Hero Section */}
-      <header className="container mx-auto px-4 py-6">
-        <nav className="flex justify-between items-center mb-20" data-aos="fade-down">
-          <div className="flex items-center gap-3">
-            <img
-              src="/icon-512.png"
-              alt="HalloWa Logo"
-              className="w-12 h-12 object-contain drop-shadow-lg hover:scale-105 transition-transform duration-300"
-            />
-            <span className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">HalloWa</span>
-          </div>
-          <div className="hidden md:flex gap-6 items-center">
-            <button onClick={() => scrollToSection('about')} className="text-gray-700 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors">
-              Tentang
-            </button>
-            <button onClick={() => scrollToSection('features')} className="text-gray-700 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors">
-              Fitur
-            </button>
-            <button onClick={() => scrollToSection('pricing')} className="text-gray-700 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors">
-              Harga
-            </button>
-            <button onClick={() => scrollToSection('contact')} className="text-gray-700 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors">
-              Kontak
-            </button>
-          </div>
-          <div className="flex gap-3">
-            <Button variant="ghost" onClick={() => navigate("/auth")} className="hidden sm:flex">
-              Login
-            </Button>
-            <Button onClick={() => navigate("/auth")} className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 shadow-lg shadow-green-500/30">
-              Get Started
-            </Button>
-          </div>
-        </nav>
+      <header className="container mx-auto px-4 pt-32 sm:pt-36 lg:pt-40 pb-6">
+
 
         <div className="grid lg:grid-cols-2 gap-12 items-center mb-20">
           {/* Left Content */}
@@ -405,7 +523,7 @@ const Landing = () => {
             </div>
             
             <h1
-              className="text-5xl md:text-6xl lg:text-7xl font-bold text-gray-900 dark:text-white mb-6 leading-tight"
+              className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold text-gray-900 dark:text-white mb-6 leading-tight"
               data-aos="fade-up"
               data-aos-delay="100"
             >
@@ -413,9 +531,9 @@ const Landing = () => {
               <span className="bg-gradient-to-r from-green-600 via-emerald-500 to-green-600 bg-clip-text text-transparent animate-gradient"> WhatsApp </span>
               Marketing
             </h1>
-            
-            <p 
-              className="text-xl text-gray-600 dark:text-gray-300 mb-8 leading-relaxed"
+
+            <p
+              className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 mb-8 leading-relaxed"
               data-aos="fade-up"
               data-aos-delay="200"
             >
@@ -486,7 +604,7 @@ const Landing = () => {
                 <Globe className="w-4 h-4 text-green-600" />
                 <span className="text-sm font-medium text-green-700 dark:text-green-400">Tentang Kami</span>
               </div>
-              <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+              <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-6">
                 {aboutData.title}
               </h2>
             </div>
@@ -508,7 +626,7 @@ const Landing = () => {
             <Smartphone className="w-4 h-4 text-green-600" />
             <span className="text-sm font-medium text-green-700 dark:text-green-400">Dashboard Preview</span>
           </div>
-          <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
             Dashboard yang Powerful & Intuitive
           </h2>
           <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
@@ -543,7 +661,7 @@ const Landing = () => {
             <Sparkles className="w-4 h-4 text-green-600" />
             <span className="text-sm font-medium text-green-700 dark:text-green-400">Fitur Lengkap</span>
           </div>
-          <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
             Semua yang Anda Butuhkan
           </h2>
           <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
@@ -596,7 +714,7 @@ const Landing = () => {
               <TrendingUp className="w-4 h-4 text-green-600" />
               <span className="text-sm font-medium text-green-700 dark:text-green-400">Harga Terbaik</span>
             </div>
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
               Pilih Paket yang Tepat untuk Anda
             </h2>
             <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
@@ -604,7 +722,7 @@ const Landing = () => {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8 max-w-7xl mx-auto">
             {plansData.map((plan, index) => {
               const isPopular = plan.name === 'Professional';
               const features = typeof plan.features === 'string'
@@ -728,7 +846,7 @@ const Landing = () => {
       {/* Comparison Table */}
       <section className="container mx-auto px-4 py-24">
         <div className="text-center mb-16" data-aos="fade-up">
-          <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
             HalloWa vs Manual WhatsApp
           </h2>
           <p className="text-xl text-gray-600 dark:text-gray-300">
@@ -770,7 +888,7 @@ const Landing = () => {
             <Star className="w-4 h-4 text-green-600" />
             <span className="text-sm font-medium text-green-700 dark:text-green-400">Testimonial</span>
           </div>
-          <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
             Kata Mereka Tentang HalloWa
           </h2>
           <p className="text-xl text-gray-600 dark:text-gray-300">
@@ -819,7 +937,7 @@ const Landing = () => {
         <div className="container mx-auto px-4 relative">
           <div className="max-w-4xl mx-auto">
             <h2 
-              className="text-4xl md:text-5xl font-bold text-white mb-12 text-center"
+              className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-12 text-center"
               data-aos="fade-up"
             >
               Kenapa Pilih HalloWa?
@@ -844,7 +962,7 @@ const Landing = () => {
       {/* FAQ Section */}
       <section className="container mx-auto px-4 py-24">
         <div className="text-center mb-16" data-aos="fade-up">
-          <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
             Pertanyaan yang Sering Diajukan
           </h2>
           <p className="text-xl text-gray-600 dark:text-gray-300">
@@ -881,7 +999,7 @@ const Landing = () => {
                 <Mail className="w-4 h-4 text-green-600" />
                 <span className="text-sm font-medium text-green-700 dark:text-green-400">Hubungi Kami</span>
               </div>
-              <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+              <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
                 Kontak
               </h2>
               <p className="text-xl text-gray-600 dark:text-gray-300">
@@ -940,7 +1058,7 @@ const Landing = () => {
       <section className="container mx-auto px-4 py-24 text-center">
         <div className="max-w-3xl mx-auto">
           <h2
-            className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-6"
+            className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-6"
             data-aos="zoom-in"
           >
             Siap Tingkatkan Marketing Anda?
@@ -968,32 +1086,32 @@ const Landing = () => {
       </section>
 
       {/* Footer */}
-      <footer className="bg-gray-900 text-white py-12" data-aos="fade-up">
-        <div className="container mx-auto px-4">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="flex items-center gap-3">
+      <footer className="bg-gray-900 text-white py-12 sm:py-16" data-aos="fade-up">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-8">
+            <div className="flex items-center gap-3 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
               <img
                 src="/icon-512.png"
                 alt="HalloWa Logo"
-                className="w-10 h-10 object-contain drop-shadow-lg"
+                className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-lg hover:scale-105 transition-transform duration-300"
               />
-              <span className="text-xl font-bold">HalloWa</span>
+              <span className="text-xl sm:text-2xl font-bold">HalloWa</span>
             </div>
-            <div className="flex gap-6 text-gray-400">
-              <button onClick={() => scrollToSection('about')} className="hover:text-white transition-colors">
+            <div className="flex flex-wrap justify-center gap-6 sm:gap-8 text-gray-400">
+              <button onClick={() => scrollToSection('about')} className="hover:text-white transition-colors font-medium">
                 Tentang
               </button>
-              <button onClick={() => scrollToSection('features')} className="hover:text-white transition-colors">
+              <button onClick={() => scrollToSection('features')} className="hover:text-white transition-colors font-medium">
                 Fitur
               </button>
-              <button onClick={() => scrollToSection('pricing')} className="hover:text-white transition-colors">
+              <button onClick={() => scrollToSection('pricing')} className="hover:text-white transition-colors font-medium">
                 Harga
               </button>
-              <button onClick={() => scrollToSection('contact')} className="hover:text-white transition-colors">
+              <button onClick={() => scrollToSection('contact')} className="hover:text-white transition-colors font-medium">
                 Kontak
               </button>
             </div>
-            <p className="text-gray-400 text-sm">
+            <p className="text-gray-400 text-sm text-center md:text-right">
               © 2024 HalloWa. All rights reserved.
             </p>
           </div>
