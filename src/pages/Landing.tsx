@@ -36,6 +36,8 @@ import { supabase } from "@/integrations/supabase/client";
 const Landing = () => {
   const navigate = useNavigate();
   const [isReady, setIsReady] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [parallaxOffset, setParallaxOffset] = useState(0);
 
   // Dynamic content from database
   const [aboutData, setAboutData] = useState({ title: '', content: '' });
@@ -53,6 +55,24 @@ const Landing = () => {
     });
     setIsReady(true);
     fetchLandingContent();
+  }, []);
+
+  // Scroll Progress Bar & Parallax Effect
+  useEffect(() => {
+    const handleScroll = () => {
+      // Calculate scroll progress (0 to 100)
+      const windowHeight = window.innerHeight;
+      const documentHeight = document.documentElement.scrollHeight;
+      const scrollTop = window.scrollY;
+      const scrollPercent = (scrollTop / (documentHeight - windowHeight)) * 100;
+      setScrollProgress(scrollPercent);
+
+      // Calculate parallax offset (smoother scrolling for background)
+      setParallaxOffset(scrollTop * 0.5);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   const fetchLandingContent = async () => {
@@ -236,6 +256,17 @@ const Landing = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white via-green-50/30 to-white dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 overflow-hidden">
+      {/* Scroll Progress Bar */}
+      <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-gray-200 dark:bg-gray-800">
+        <div
+          className="h-full bg-gradient-to-r from-green-600 via-emerald-500 to-green-600 transition-all duration-150 ease-out shadow-lg shadow-green-500/50"
+          style={{
+            width: `${scrollProgress}%`,
+            boxShadow: scrollProgress > 0 ? '0 0 10px rgba(34, 197, 94, 0.5)' : 'none'
+          }}
+        />
+      </div>
+
       {/* Custom Animations */}
       <style>{`
         @keyframes float {
@@ -269,11 +300,20 @@ const Landing = () => {
         }
       `}</style>
 
-      {/* Decorative Background with Animation */}
+      {/* Decorative Background with Animation & Parallax */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-500/10 rounded-full blur-3xl animate-float" />
-        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-emerald-500/10 rounded-full blur-3xl animate-float-delayed" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-teal-500/5 rounded-full blur-3xl animate-pulse" />
+        <div
+          className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-500/10 rounded-full blur-3xl animate-float transition-transform duration-100 ease-out"
+          style={{ transform: `translateY(${parallaxOffset * 0.3}px)` }}
+        />
+        <div
+          className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-emerald-500/10 rounded-full blur-3xl animate-float-delayed transition-transform duration-100 ease-out"
+          style={{ transform: `translateY(-${parallaxOffset * 0.4}px)` }}
+        />
+        <div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-teal-500/5 rounded-full blur-3xl animate-pulse transition-transform duration-100 ease-out"
+          style={{ transform: `translate(-50%, calc(-50% + ${parallaxOffset * 0.2}px))` }}
+        />
       </div>
 
       {/* Hero Section */}
@@ -432,11 +472,15 @@ const Landing = () => {
           </p>
         </div>
 
-        <div className="relative" data-aos="zoom-in">
+        <div
+          className="relative transition-transform duration-100 ease-out"
+          data-aos="zoom-in"
+          style={{ transform: `translateY(${parallaxOffset * 0.15}px)` }}
+        >
           <div className="absolute -inset-4 bg-gradient-to-r from-green-500 to-emerald-600 rounded-3xl blur-2xl opacity-20" />
           <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-700">
-            <img 
-              src="/dashboard-preview.png" 
+            <img
+              src="/dashboard-preview.png"
               alt="HalloWa Dashboard"
               className="w-full h-auto"
             />
@@ -488,10 +532,19 @@ const Landing = () => {
       {/* Pricing Section */}
       {plansData.length > 0 && (
         <section id="pricing" className="container mx-auto px-4 py-24 relative overflow-hidden">
-          {/* Animated Background */}
+          {/* Animated Background with Parallax */}
           <div className="absolute inset-0 -z-10">
-            <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-green-500/10 rounded-full blur-3xl animate-pulse" />
-            <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+            <div
+              className="absolute top-1/4 left-1/4 w-96 h-96 bg-green-500/10 rounded-full blur-3xl animate-pulse transition-transform duration-100 ease-out"
+              style={{ transform: `translate(${parallaxOffset * 0.1}px, ${parallaxOffset * 0.15}px)` }}
+            />
+            <div
+              className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl animate-pulse transition-transform duration-100 ease-out"
+              style={{
+                animationDelay: '1s',
+                transform: `translate(-${parallaxOffset * 0.12}px, -${parallaxOffset * 0.18}px)`
+              }}
+            />
           </div>
 
           <div className="text-center mb-16" data-aos="fade-up">
