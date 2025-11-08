@@ -552,11 +552,11 @@ const Landing = () => {
               >
                 Mulai Sekarang <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </Button>
-              <Button 
-                size="lg" 
+              <Button
+                size="lg"
                 variant="outline"
-                onClick={() => navigate("/pricing")}
-                className="text-lg px-8 border-2"
+                onClick={() => scrollToSection('pricing')}
+                className="text-lg px-8 border-2 magnetic-button"
               >
                 Lihat Harga
               </Button>
@@ -725,9 +725,18 @@ const Landing = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8 max-w-7xl mx-auto">
             {plansData.map((plan, index) => {
               const isPopular = plan.name === 'Professional';
+              const isBestValue = plan.name === 'Starter';
               const features = typeof plan.features === 'string'
                 ? JSON.parse(plan.features)
                 : plan.features || [];
+
+              // Format price untuk tampilan yang lebih baik
+              const formatPrice = (price: number) => {
+                if (price === 0) return 'Gratis';
+                if (price >= 1000000) return `${(price / 1000000).toFixed(1)}Jt`;
+                if (price >= 1000) return `${(price / 1000).toFixed(0)}K`;
+                return price.toString();
+              };
 
               return (
                 <div
@@ -736,18 +745,26 @@ const Landing = () => {
                   data-aos="fade-up"
                   data-aos-delay={index * 100}
                 >
-                  {isPopular && (
-                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-10">
-                      <span className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-4 py-1 rounded-full text-sm font-semibold shadow-lg">
+                  {/* Badge Container */}
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-10 flex flex-col gap-2 items-center">
+                    {isPopular && (
+                      <span className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-4 py-1 rounded-full text-sm font-semibold shadow-lg animate-pulse">
                         🔥 Paling Populer
                       </span>
-                    </div>
-                  )}
+                    )}
+                    {isBestValue && !isPopular && (
+                      <span className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-1 rounded-full text-sm font-semibold shadow-lg">
+                        💎 Best Value
+                      </span>
+                    )}
+                  </div>
 
                   <div
-                    className={`h-full bg-white dark:bg-gray-800 rounded-2xl p-8 border-2 transition-all duration-500 hover:shadow-2xl hover:-translate-y-2 ${
+                    className={`h-full bg-white dark:bg-gray-800 rounded-2xl p-6 sm:p-8 border-2 transition-all duration-500 hover:shadow-2xl hover:-translate-y-2 ${
                       isPopular
-                        ? 'border-green-500 shadow-xl shadow-green-500/20 scale-105'
+                        ? 'border-green-500 shadow-xl shadow-green-500/20 lg:scale-105'
+                        : isBestValue
+                        ? 'border-blue-400 shadow-lg shadow-blue-400/10'
                         : 'border-gray-200 dark:border-gray-700 hover:border-green-500/50'
                     }`}
                     style={{
@@ -755,66 +772,89 @@ const Landing = () => {
                       transition: 'transform 0.6s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.3s ease'
                     }}
                     onMouseMove={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const x = e.clientX - rect.left;
-                      const y = e.clientY - rect.top;
-                      const centerX = rect.width / 2;
-                      const centerY = rect.height / 2;
-                      const rotateX = (y - centerY) / 20;
-                      const rotateY = (centerX - x) / 20;
-                      e.currentTarget.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+                      if (window.innerWidth >= 1024) { // Only on desktop
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const y = e.clientY - rect.top;
+                        const centerX = rect.width / 2;
+                        const centerY = rect.height / 2;
+                        const rotateX = (y - centerY) / 20;
+                        const rotateY = (centerX - x) / 20;
+                        e.currentTarget.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+                      }
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg)';
                     }}
                   >
+                    {/* Plan Header */}
                     <div className="text-center mb-6">
-                      <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                      <h3 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-2">
                         {plan.name}
                       </h3>
                       {plan.description && (
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                        <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                           {plan.description}
                         </p>
                       )}
                     </div>
 
+                    {/* Pricing */}
                     <div className="text-center mb-8">
-                      <div className="flex items-baseline justify-center gap-1">
-                        <span className="text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
-                          Rp {(plan.price / 1000).toFixed(0)}K
-                        </span>
+                      <div className="flex flex-col items-center justify-center gap-1 mb-2">
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-sm text-gray-500 dark:text-gray-400">Rp</span>
+                          <span className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
+                            {formatPrice(plan.price)}
+                          </span>
+                        </div>
                         {plan.price > 0 && (
-                          <span className="text-gray-500 dark:text-gray-400 text-sm">/bulan</span>
+                          <span className="text-gray-500 dark:text-gray-400 text-xs sm:text-sm">/bulan</span>
                         )}
                       </div>
-                      {plan.price === 0 && (
-                        <span className="text-sm text-green-600 dark:text-green-400 font-medium">
+                      {plan.price === 0 ? (
+                        <span className="inline-block bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-3 py-1 rounded-full text-xs font-semibold">
                           Gratis Selamanya
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          Rp {plan.price.toLocaleString('id-ID')}/bulan
                         </span>
                       )}
                     </div>
 
-                    <ul className="space-y-3 mb-8">
+                    {/* Features List */}
+                    <ul className="space-y-3 mb-8 min-h-[200px]">
                       {features.map((feature: string, idx: number) => (
                         <li key={idx} className="flex items-start gap-3 text-gray-700 dark:text-gray-300">
                           <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                          <span className="text-sm">{feature}</span>
+                          <span className="text-sm leading-snug">{feature}</span>
                         </li>
                       ))}
                     </ul>
 
+                    {/* CTA Button */}
                     <Button
                       onClick={() => navigate("/auth")}
+                      size="lg"
                       className={`w-full ${
                         isPopular
                           ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 shadow-lg shadow-green-500/30'
-                          : 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100'
-                      } group transition-all duration-300`}
+                          : isBestValue
+                          ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-500/30'
+                          : 'bg-gray-900 dark:bg-gray-700 text-white hover:bg-gray-800 dark:hover:bg-gray-600'
+                      } group transition-all duration-300 font-semibold`}
                     >
-                      Pilih Paket
+                      {plan.price === 0 ? 'Mulai Gratis' : 'Pilih Paket'}
                       <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
                     </Button>
+
+                    {/* Additional Info */}
+                    {plan.price > 0 && (
+                      <p className="text-center text-xs text-gray-500 dark:text-gray-400 mt-3">
+                        7 hari trial gratis
+                      </p>
+                    )}
                   </div>
                 </div>
               );
@@ -822,22 +862,29 @@ const Landing = () => {
           </div>
 
           {/* Trust Badge */}
-          <div className="text-center mt-12" data-aos="fade-up" data-aos-delay="400">
-            <div className="inline-flex items-center gap-6 px-6 py-3 bg-white dark:bg-gray-800 rounded-full shadow-lg border border-gray-200 dark:border-gray-700">
+          <div className="text-center mt-12 px-4" data-aos="fade-up" data-aos-delay="400">
+            <div className="inline-flex flex-col sm:flex-row items-center gap-4 sm:gap-6 px-6 py-4 sm:py-3 bg-white dark:bg-gray-800 rounded-2xl sm:rounded-full shadow-lg border border-gray-200 dark:border-gray-700 max-w-2xl">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-green-600" />
-                <span className="text-sm text-gray-700 dark:text-gray-300">7 Hari Gratis</span>
+                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">7 Hari Trial Gratis</span>
               </div>
-              <div className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+              <div className="hidden sm:block w-px h-4 bg-gray-300 dark:bg-gray-600" />
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-green-600" />
-                <span className="text-sm text-gray-700 dark:text-gray-300">Tanpa Kartu Kredit</span>
+                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Tanpa Kartu Kredit</span>
               </div>
-              <div className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+              <div className="hidden sm:block w-px h-4 bg-gray-300 dark:bg-gray-600" />
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-green-600" />
-                <span className="text-sm text-gray-700 dark:text-gray-300">Cancel Kapan Saja</span>
+                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Cancel Kapan Saja</span>
               </div>
+            </div>
+
+            {/* Money Back Guarantee */}
+            <div className="mt-6">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                💯 <span className="font-semibold">100% Money-Back Guarantee</span> - Tidak puas? Refund penuh dalam 30 hari
+              </p>
             </div>
           </div>
         </section>
