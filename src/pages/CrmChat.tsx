@@ -143,12 +143,25 @@ export const CrmChat = () => {
         schema: 'public',
         table: 'whatsapp_conversations',
         filter: `device_id=eq.${selectedDevice}`
-      }, (payload) => {
+      }, async (payload) => {
         console.log('📱 Conversation update:', payload);
         // Refresh conversations list when any conversation changes
-        startTransition(() => {
-          fetchContacts();
-        });
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data } = await supabase
+          .from("whatsapp_conversations")
+          .select("*")
+          .eq("user_id", user.id)
+          .eq("device_id", selectedDevice)
+          .order("updated_at", { ascending: false })
+          .limit(100);
+
+        if (data) {
+          startTransition(() => {
+            setContacts(data);
+          });
+        }
       })
       .subscribe();
 
@@ -158,7 +171,7 @@ export const CrmChat = () => {
       console.log('🔌 Unsubscribed from conversations');
       channel.unsubscribe();
     };
-  }, [selectedDevice, fetchContacts]);
+  }, [selectedDevice]);
 
   // Realtime subscription for messages in selected conversation
   useEffect(() => {
@@ -176,11 +189,6 @@ export const CrmChat = () => {
         // Add new message to messages list
         setMessages(prev => [...prev, payload.new as Message]);
         scrollToBottom();
-
-        // Refresh conversations to update last message preview
-        startTransition(() => {
-          fetchContacts();
-        });
       })
       .on('postgres_changes', {
         event: 'UPDATE',
@@ -202,7 +210,7 @@ export const CrmChat = () => {
       console.log('🔌 Unsubscribed from messages');
       channel.unsubscribe();
     };
-  }, [selectedContact, fetchContacts]);
+  }, [selectedContact]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
