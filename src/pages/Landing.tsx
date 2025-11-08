@@ -41,6 +41,7 @@ const Landing = () => {
   const [aboutData, setAboutData] = useState({ title: '', content: '' });
   const [featuresData, setFeaturesData] = useState<any[]>([]);
   const [contactData, setContactData] = useState({ email: '', phone: '', address: '' });
+  const [plansData, setPlansData] = useState<any[]>([]);
 
   useEffect(() => {
     AOS.init({
@@ -89,6 +90,17 @@ const Landing = () => {
           phone: contact.phone || '',
           address: contact.address || ''
         });
+      }
+
+      // Fetch Plans
+      const { data: plans } = await supabase
+        .from('plans')
+        .select('*')
+        .eq('is_active', true)
+        .order('price');
+
+      if (plans) {
+        setPlansData(plans);
       }
     } catch (error) {
       console.error('Error fetching landing content:', error);
@@ -223,11 +235,45 @@ const Landing = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white via-green-50/30 to-white dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-      {/* Decorative Background */}
+    <div className="min-h-screen bg-gradient-to-b from-white via-green-50/30 to-white dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 overflow-hidden">
+      {/* Custom Animations */}
+      <style>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-20px); }
+        }
+        @keyframes gradient-shift {
+          0%, 100% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+        }
+        @keyframes glow {
+          0%, 100% { box-shadow: 0 0 20px rgba(34, 197, 94, 0.3); }
+          50% { box-shadow: 0 0 40px rgba(34, 197, 94, 0.6); }
+        }
+        .animate-float {
+          animation: float 6s ease-in-out infinite;
+        }
+        .animate-float-delayed {
+          animation: float 6s ease-in-out infinite 1s;
+        }
+        .animate-gradient {
+          background-size: 200% 200%;
+          animation: gradient-shift 8s ease infinite;
+        }
+        .animate-glow {
+          animation: glow 3s ease-in-out infinite;
+        }
+        .card-3d:hover {
+          transform: translateY(-10px) scale(1.02);
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+      `}</style>
+
+      {/* Decorative Background with Animation */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-emerald-500/10 rounded-full blur-3xl" />
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-500/10 rounded-full blur-3xl animate-float" />
+        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-emerald-500/10 rounded-full blur-3xl animate-float-delayed" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-teal-500/5 rounded-full blur-3xl animate-pulse" />
       </div>
 
       {/* Hero Section */}
@@ -246,7 +292,7 @@ const Landing = () => {
             <button onClick={() => scrollToSection('features')} className="text-gray-700 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors">
               Fitur
             </button>
-            <button onClick={() => navigate('/pricing')} className="text-gray-700 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors">
+            <button onClick={() => scrollToSection('pricing')} className="text-gray-700 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors">
               Harga
             </button>
             <button onClick={() => scrollToSection('contact')} className="text-gray-700 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors">
@@ -274,13 +320,13 @@ const Landing = () => {
               <span className="text-sm font-medium text-green-700 dark:text-green-400">WhatsApp Marketing Solution</span>
             </div>
             
-            <h1 
+            <h1
               className="text-5xl md:text-6xl lg:text-7xl font-bold text-gray-900 dark:text-white mb-6 leading-tight"
               data-aos="fade-up"
               data-aos-delay="100"
             >
               Automate Your
-              <span className="bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent"> WhatsApp </span>
+              <span className="bg-gradient-to-r from-green-600 via-emerald-500 to-green-600 bg-clip-text text-transparent animate-gradient"> WhatsApp </span>
               Marketing
             </h1>
             
@@ -297,10 +343,10 @@ const Landing = () => {
               data-aos="fade-up"
               data-aos-delay="300"
             >
-              <Button 
-                size="lg" 
+              <Button
+                size="lg"
                 onClick={() => navigate("/auth")}
-                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-lg px-8 shadow-xl shadow-green-500/30 group"
+                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-lg px-8 shadow-xl shadow-green-500/30 group animate-glow"
               >
                 Mulai Sekarang <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </Button>
@@ -323,8 +369,11 @@ const Landing = () => {
           </div>
 
           {/* Right Content - Chat Animation */}
-          <div className="relative" data-aos="fade-left" data-aos-delay="200">
-            <ChatAnimation />
+          <div className="relative animate-float" data-aos="fade-left" data-aos-delay="200">
+            <div className="absolute -inset-4 bg-gradient-to-r from-green-500/20 to-emerald-500/20 rounded-3xl blur-2xl" />
+            <div className="relative">
+              <ChatAnimation />
+            </div>
           </div>
         </div>
       </header>
@@ -435,6 +484,149 @@ const Landing = () => {
           ))}
         </div>
       </section>
+
+      {/* Pricing Section */}
+      {plansData.length > 0 && (
+        <section id="pricing" className="container mx-auto px-4 py-24 relative overflow-hidden">
+          {/* Animated Background */}
+          <div className="absolute inset-0 -z-10">
+            <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-green-500/10 rounded-full blur-3xl animate-pulse" />
+            <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+          </div>
+
+          <div className="text-center mb-16" data-aos="fade-up">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 dark:bg-green-900/30 rounded-full mb-4">
+              <TrendingUp className="w-4 h-4 text-green-600" />
+              <span className="text-sm font-medium text-green-700 dark:text-green-400">Harga Terbaik</span>
+            </div>
+            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+              Pilih Paket yang Tepat untuk Anda
+            </h2>
+            <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+              Investasi terbaik untuk kesuksesan bisnis Anda
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 max-w-7xl mx-auto">
+            {plansData.map((plan, index) => {
+              const isPopular = plan.name === 'Professional';
+              const features = typeof plan.features === 'string'
+                ? JSON.parse(plan.features)
+                : plan.features || [];
+
+              return (
+                <div
+                  key={plan.id}
+                  className={`relative group ${isPopular ? 'lg:-translate-y-4' : ''}`}
+                  data-aos="fade-up"
+                  data-aos-delay={index * 100}
+                >
+                  {isPopular && (
+                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-10">
+                      <span className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-4 py-1 rounded-full text-sm font-semibold shadow-lg">
+                        🔥 Paling Populer
+                      </span>
+                    </div>
+                  )}
+
+                  <div
+                    className={`h-full bg-white dark:bg-gray-800 rounded-2xl p-8 border-2 transition-all duration-500 hover:shadow-2xl hover:-translate-y-2 ${
+                      isPopular
+                        ? 'border-green-500 shadow-xl shadow-green-500/20 scale-105'
+                        : 'border-gray-200 dark:border-gray-700 hover:border-green-500/50'
+                    }`}
+                    style={{
+                      transform: 'perspective(1000px) rotateX(0deg) rotateY(0deg)',
+                      transition: 'transform 0.6s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.3s ease'
+                    }}
+                    onMouseMove={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const x = e.clientX - rect.left;
+                      const y = e.clientY - rect.top;
+                      const centerX = rect.width / 2;
+                      const centerY = rect.height / 2;
+                      const rotateX = (y - centerY) / 20;
+                      const rotateY = (centerX - x) / 20;
+                      e.currentTarget.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg)';
+                    }}
+                  >
+                    <div className="text-center mb-6">
+                      <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                        {plan.name}
+                      </h3>
+                      {plan.description && (
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          {plan.description}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="text-center mb-8">
+                      <div className="flex items-baseline justify-center gap-1">
+                        <span className="text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
+                          Rp {(plan.price / 1000).toFixed(0)}K
+                        </span>
+                        {plan.price > 0 && (
+                          <span className="text-gray-500 dark:text-gray-400 text-sm">/bulan</span>
+                        )}
+                      </div>
+                      {plan.price === 0 && (
+                        <span className="text-sm text-green-600 dark:text-green-400 font-medium">
+                          Gratis Selamanya
+                        </span>
+                      )}
+                    </div>
+
+                    <ul className="space-y-3 mb-8">
+                      {features.map((feature: string, idx: number) => (
+                        <li key={idx} className="flex items-start gap-3 text-gray-700 dark:text-gray-300">
+                          <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                          <span className="text-sm">{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+
+                    <Button
+                      onClick={() => navigate("/auth")}
+                      className={`w-full ${
+                        isPopular
+                          ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 shadow-lg shadow-green-500/30'
+                          : 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100'
+                      } group transition-all duration-300`}
+                    >
+                      Pilih Paket
+                      <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Trust Badge */}
+          <div className="text-center mt-12" data-aos="fade-up" data-aos-delay="400">
+            <div className="inline-flex items-center gap-6 px-6 py-3 bg-white dark:bg-gray-800 rounded-full shadow-lg border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-green-600" />
+                <span className="text-sm text-gray-700 dark:text-gray-300">7 Hari Gratis</span>
+              </div>
+              <div className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-green-600" />
+                <span className="text-sm text-gray-700 dark:text-gray-300">Tanpa Kartu Kredit</span>
+              </div>
+              <div className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-green-600" />
+                <span className="text-sm text-gray-700 dark:text-gray-300">Cancel Kapan Saja</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Comparison Table */}
       <section className="container mx-auto px-4 py-24">
@@ -695,7 +887,7 @@ const Landing = () => {
               <button onClick={() => scrollToSection('features')} className="hover:text-white transition-colors">
                 Fitur
               </button>
-              <button onClick={() => navigate('/pricing')} className="hover:text-white transition-colors">
+              <button onClick={() => scrollToSection('pricing')} className="hover:text-white transition-colors">
                 Harga
               </button>
               <button onClick={() => scrollToSection('contact')} className="hover:text-white transition-colors">
