@@ -41,7 +41,15 @@ const Landing = () => {
       offset: 100,
       delay: 0,
     });
+
+    // Enable smooth scrolling
+    document.documentElement.style.scrollBehavior = 'smooth';
+
     setIsReady(true);
+
+    return () => {
+      document.documentElement.style.scrollBehavior = 'auto';
+    };
   }, []);
 
   const features = [
@@ -158,7 +166,7 @@ const Landing = () => {
       </div>
 
       {/* Hero Section */}
-      <header className="container mx-auto px-4 py-6">
+      <header className="container mx-auto px-4 py-6" id="beranda">
         <nav className="flex justify-between items-center mb-20" data-aos="fade-down">
           <div className="flex items-center gap-2">
             <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
@@ -166,13 +174,29 @@ const Landing = () => {
             </div>
             <span className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">HalloWa</span>
           </div>
-          <div className="flex gap-3">
-            <Button variant="ghost" onClick={() => navigate("/auth")} className="hidden sm:flex">
-              Login
-            </Button>
-            <Button onClick={() => navigate("/auth")} className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 shadow-lg shadow-green-500/30">
-              Get Started
-            </Button>
+          <div className="flex items-center gap-6">
+            <div className="hidden md:flex gap-6">
+              <a href="#tentang" className="text-gray-600 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors font-medium">
+                Tentang
+              </a>
+              <a href="#fitur" className="text-gray-600 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors font-medium">
+                Fitur
+              </a>
+              <a href="#harga" className="text-gray-600 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors font-medium">
+                Harga
+              </a>
+              <a href="#kontak" className="text-gray-600 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400 transition-colors font-medium">
+                Kontak
+              </a>
+            </div>
+            <div className="flex gap-3">
+              <Button variant="ghost" onClick={() => navigate("/auth")} className="hidden sm:flex">
+                Login
+              </Button>
+              <Button onClick={() => navigate("/auth")} className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 shadow-lg shadow-green-500/30">
+                Get Started
+              </Button>
+            </div>
           </div>
         </nav>
 
@@ -243,7 +267,7 @@ const Landing = () => {
       </header>
 
       {/* Social Proof */}
-      <section className="bg-gray-50 dark:bg-gray-800/50 py-12 border-y border-gray-200 dark:border-gray-700">
+      <section id="tentang" className="bg-gray-50 dark:bg-gray-800/50 py-12 border-y border-gray-200 dark:border-gray-700">
         <div className="container mx-auto px-4">
           <p className="text-center text-gray-600 dark:text-gray-400 mb-8 font-medium">
             Dipercaya oleh ribuan bisnis di Indonesia
@@ -289,7 +313,7 @@ const Landing = () => {
       </section>
 
       {/* Features Section */}
-      <section className="container mx-auto px-4 py-24">
+      <section id="fitur" className="container mx-auto px-4 py-24">
         <div className="text-center mb-16" data-aos="fade-up">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 dark:bg-green-900/30 rounded-full mb-4">
             <Sparkles className="w-4 h-4 text-green-600" />
@@ -441,6 +465,29 @@ const Landing = () => {
         </div>
       </section>
 
+      {/* Pricing Section */}
+      <section id="harga" className="container mx-auto px-4 py-24 bg-gray-50 dark:bg-gray-800/30">
+        <div className="text-center mb-16" data-aos="fade-up">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 dark:bg-green-900/30 rounded-full mb-4">
+            <TrendingUp className="w-4 h-4 text-green-600" />
+            <span className="text-sm font-medium text-green-700 dark:text-green-400">Paket & Harga</span>
+          </div>
+          <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+            Pilih Paket yang Sesuai
+          </h2>
+          <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto mb-8">
+            Mulai dari free trial, upgrade kapan saja sesuai kebutuhan bisnis Anda
+          </p>
+          <Button
+            size="lg"
+            onClick={() => navigate("/pricing")}
+            className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-lg px-8 shadow-lg shadow-green-500/30"
+          >
+            Lihat Semua Paket & Harga
+          </Button>
+        </div>
+      </section>
+
       {/* FAQ Section */}
       <section className="container mx-auto px-4 py-24">
         <div className="text-center mb-16" data-aos="fade-up">
@@ -503,6 +550,56 @@ const Landing = () => {
         </div>
       </section>
 
+      {/* Contact Section */}
+      <section id="kontak" className="bg-gray-50 dark:bg-gray-800/30 py-24">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-16" data-aos="fade-up">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 dark:bg-green-900/30 rounded-full mb-4">
+              <Mail className="w-4 h-4 text-green-600" />
+              <span className="text-sm font-medium text-green-700 dark:text-green-400">Hubungi Kami</span>
+            </div>
+            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+              Ada Pertanyaan?
+            </h2>
+            <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+              Tim kami siap membantu Anda 24/7
+            </p>
+          </div>
+
+          <div className="max-w-4xl mx-auto grid md:grid-cols-3 gap-8" data-aos="fade-up" data-aos-delay="100">
+            <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg text-center border border-gray-200 dark:border-gray-700">
+              <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center mx-auto mb-4 text-white">
+                <Mail className="w-6 h-6" />
+              </div>
+              <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Email</h3>
+              <a href="mailto:support@hallowa.com" className="text-green-600 hover:text-green-700 transition-colors">
+                support@hallowa.com
+              </a>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg text-center border border-gray-200 dark:border-gray-700">
+              <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center mx-auto mb-4 text-white">
+                <MessageSquare className="w-6 h-6" />
+              </div>
+              <h3 className="font-semibold text-gray-900 dark:text-white mb-2">WhatsApp</h3>
+              <a href="https://wa.me/6281234567890" target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-700 transition-colors">
+                +62 812-3456-7890
+              </a>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg text-center border border-gray-200 dark:border-gray-700">
+              <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center mx-auto mb-4 text-white">
+                <Clock className="w-6 h-6" />
+              </div>
+              <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Jam Operasional</h3>
+              <p className="text-gray-600 dark:text-gray-300">
+                24/7 Live Support
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="bg-gray-900 text-white py-12" data-aos="fade-up">
         <div className="container mx-auto px-4">
@@ -514,10 +611,10 @@ const Landing = () => {
               <span className="text-xl font-bold">HalloWa</span>
             </div>
             <div className="flex gap-6 text-gray-400">
-              <a href="#" className="hover:text-white transition-colors">Tentang</a>
-              <a href="#" className="hover:text-white transition-colors">Fitur</a>
-              <a href="#" className="hover:text-white transition-colors">Harga</a>
-              <a href="#" className="hover:text-white transition-colors">Kontak</a>
+              <a href="#tentang" className="hover:text-white transition-colors">Tentang</a>
+              <a href="#fitur" className="hover:text-white transition-colors">Fitur</a>
+              <a href="#harga" className="hover:text-white transition-colors">Harga</a>
+              <a href="#kontak" className="hover:text-white transition-colors">Kontak</a>
             </div>
             <p className="text-gray-400 text-sm">
               © 2024 HalloWa. All rights reserved.
