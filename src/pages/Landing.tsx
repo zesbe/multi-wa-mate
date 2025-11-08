@@ -33,20 +33,23 @@ const Landing = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    AOS.init({
-      duration: 800,
-      easing: 'ease-in-out',
-      once: true,
-      offset: 100,
-      delay: 0,
-    });
-
-    // Enable smooth scrolling
-    document.documentElement.style.scrollBehavior = 'smooth';
-
-    return () => {
-      document.documentElement.style.scrollBehavior = 'auto';
+    // Defer AOS initialization to avoid blocking INP
+    const initAOS = () => {
+      AOS.init({
+        duration: 800,
+        easing: 'ease-in-out',
+        once: true,
+        offset: 100,
+        delay: 0,
+      });
     };
+
+    // Use requestIdleCallback if available, otherwise setTimeout
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(initAOS);
+    } else {
+      setTimeout(initAOS, 1);
+    }
   }, []);
 
   const features = [
@@ -151,7 +154,7 @@ const Landing = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white via-green-50/30 to-white dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+    <div className="min-h-screen bg-gradient-to-b from-white via-green-50/30 to-white dark:from-gray-900 dark:via-gray-800 dark:to-gray-900" style={{ scrollBehavior: 'smooth' }}>
       {/* Decorative Background */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-500/10 rounded-full blur-3xl" />
@@ -619,45 +622,57 @@ const Landing = () => {
   );
 };
 
-// Stats Counter Component with Animation
+// Stats Counter Component with Animation (Optimized for INP)
 const StatsCounter = ({ value, suffix, label }: { value: number; suffix: string; label: string }) => {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
     const duration = 2000;
-    const steps = 60;
-    const increment = value / steps;
-    let current = 0;
+    const startTime = performance.now();
+    let animationFrame: number;
 
-    const timer = setInterval(() => {
-      current += increment;
-      if (current >= value) {
-        setCount(value);
-        clearInterval(timer);
+    const animate = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Easing function for smoother animation
+      const easeOutQuad = progress * (2 - progress);
+      const currentCount = Math.floor(easeOutQuad * value);
+
+      setCount(currentCount);
+
+      if (progress < 1) {
+        animationFrame = requestAnimationFrame(animate);
       } else {
-        setCount(Math.floor(current));
+        setCount(value);
       }
-    }, duration / steps);
+    };
 
-    return () => clearInterval(timer);
+    animationFrame = requestAnimationFrame(animate);
+
+    return () => cancelAnimationFrame(animationFrame);
   }, [value]);
+
+  // Memoize formatted value to avoid expensive toLocaleString on every render
+  const formattedCount = count.toLocaleString();
 
   return (
     <div>
       <div className="text-3xl font-bold text-gray-900 dark:text-white">
-        {count.toLocaleString()}{suffix}
+        {formattedCount}{suffix}
       </div>
       <div className="text-sm text-gray-600 dark:text-gray-400">{label}</div>
     </div>
   );
 };
 
-// Chat Animation Component
+// Chat Animation Component (Optimized for INP)
 const ChatAnimation = () => {
   const [messages, setMessages] = useState<Array<{text: string, isBot: boolean}>>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isTyping, setIsTyping] = useState(false);
 
+  // Memoize conversation to avoid recreation
   const conversation = [
     { text: "Halo, bisa bantu saya?", isBot: false },
     { text: "Tentu! Ada yang bisa saya bantu? 😊", isBot: true },
@@ -669,11 +684,11 @@ const ChatAnimation = () => {
 
   useEffect(() => {
     if (currentIndex >= conversation.length) {
-      setTimeout(() => {
+      const resetTimer = setTimeout(() => {
         setMessages([]);
         setCurrentIndex(0);
       }, 3000);
-      return;
+      return () => clearTimeout(resetTimer);
     }
 
     setIsTyping(true);
@@ -686,7 +701,7 @@ const ChatAnimation = () => {
     }, typingDelay);
 
     return () => clearTimeout(typingTimer);
-  }, [currentIndex, messages.length]);
+  }, [currentIndex]); // Removed messages.length dependency
 
   return (
     <div className="relative bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-6 max-w-md mx-auto border border-gray-200 dark:border-gray-700">
