@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   MessageSquare,
   Users,
@@ -1007,7 +1007,7 @@ const Landing = () => {
 const StatsCounter = ({ value, suffix, label }: { value: number; suffix: string; label: string }) => {
   const [count, setCount] = useState(0);
   const [hasAnimated, setHasAnimated] = useState(false);
-  const counterRef = useState<HTMLDivElement | null>(null)[0];
+  const counterRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -1036,19 +1036,19 @@ const StatsCounter = ({ value, suffix, label }: { value: number; suffix: string;
       { threshold: 0.5 }
     );
 
-    if (counterRef) {
-      observer.observe(counterRef);
+    if (counterRef.current) {
+      observer.observe(counterRef.current);
     }
 
     return () => {
-      if (counterRef) {
-        observer.unobserve(counterRef);
+      if (counterRef.current) {
+        observer.unobserve(counterRef.current);
       }
     };
-  }, [value, hasAnimated, counterRef]);
+  }, [value, hasAnimated]);
 
   return (
-    <div ref={(el) => { if (el) counterRef = el; }}>
+    <div ref={counterRef}>
       <div className="text-3xl font-bold text-gray-900 dark:text-white">
         {count.toLocaleString()}{suffix}
       </div>
