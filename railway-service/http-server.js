@@ -41,13 +41,29 @@ function createHTTPServer(activeSockets) {
     if (pathname === '/send-message' && req.method === 'POST') {
       let body = '';
 
+      req.on('error', (err) => {
+        console.error('Request error:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Request error', details: err.message }));
+      });
+
       req.on('data', chunk => {
         body += chunk.toString();
       });
 
       req.on('end', async () => {
         try {
-          const { deviceId, targetJid, messageType, message, mediaUrl, caption } = JSON.parse(body);
+          // Parse JSON body
+          let parsedBody;
+          try {
+            parsedBody = JSON.parse(body);
+          } catch (parseError) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON in request body', details: parseError.message }));
+            return;
+          }
+
+          const { deviceId, targetJid, messageType, message, mediaUrl, caption } = parsedBody;
 
           if (!deviceId || !targetJid) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
