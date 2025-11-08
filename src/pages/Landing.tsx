@@ -361,10 +361,12 @@ const Landing = () => {
       {/* Hero Section */}
       <header className="container mx-auto px-4 py-6">
         <nav className="flex justify-between items-center mb-20" data-aos="fade-down">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
-              <MessageSquare className="w-6 h-6 text-white" />
-            </div>
+          <div className="flex items-center gap-3">
+            <img
+              src="/icon-512.png"
+              alt="HalloWa Logo"
+              className="w-12 h-12 object-contain drop-shadow-lg hover:scale-105 transition-transform duration-300"
+            />
             <span className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">HalloWa</span>
           </div>
           <div className="hidden md:flex gap-6 items-center">
@@ -969,10 +971,12 @@ const Landing = () => {
       <footer className="bg-gray-900 text-white py-12" data-aos="fade-up">
         <div className="container mx-auto px-4">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center">
-                <MessageSquare className="w-5 h-5 text-white" />
-              </div>
+            <div className="flex items-center gap-3">
+              <img
+                src="/icon-512.png"
+                alt="HalloWa Logo"
+                className="w-10 h-10 object-contain drop-shadow-lg"
+              />
               <span className="text-xl font-bold">HalloWa</span>
             </div>
             <div className="flex gap-6 text-gray-400">
