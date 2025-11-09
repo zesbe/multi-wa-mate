@@ -1,156 +1,93 @@
-import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useEffect, useState } from "react";
 import { AdminLayout } from "@/components/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Save, FileText, Star, Mail } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Save, Plus, Trash2 } from "lucide-react";
 
-export default function AdminLandingContent() {
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  // About Section
-  const [aboutTitle, setAboutTitle] = useState("");
-  const [aboutContent, setAboutContent] = useState("");
-
-  // Features
+export const AdminLandingContent = () => {
+  const [sections, setSections] = useState<any[]>([]);
   const [features, setFeatures] = useState<any[]>([]);
-
-  // Contact
-  const [contactEmail, setContactEmail] = useState("");
-  const [contactPhone, setContactPhone] = useState("");
-  const [contactAddress, setContactAddress] = useState("");
+  const [contact, setContact] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchContent();
+    fetchData();
   }, []);
 
-  const fetchContent = async () => {
+  const fetchData = async () => {
     try {
-      setLoading(true);
+      const [sectionsRes, featuresRes, contactRes] = await Promise.all([
+        supabase.from("landing_sections").select("*").order("display_order"),
+        supabase.from("landing_features").select("*").order("display_order"),
+        supabase.from("landing_contact").select("*").maybeSingle(),
+      ]);
 
-      // Fetch sections
-      const { data: sections } = await supabase
-        .from("landing_sections")
-        .select("*")
-        .eq("section_key", "about")
-        .single();
-
-      if (sections) {
-        setAboutTitle(sections.title || "");
-        setAboutContent(sections.content || "");
-      }
-
-      // Fetch features
-      const { data: featuresData } = await supabase
-        .from("landing_features")
-        .select("*")
-        .order("order_index");
-
-      if (featuresData) {
-        setFeatures(featuresData);
-      }
-
-      // Fetch contact
-      const { data: contact } = await supabase
-        .from("landing_contact")
-        .select("*")
-        .single();
-
-      if (contact) {
-        setContactEmail(contact.email || "");
-        setContactPhone(contact.phone || "");
-        setContactAddress(contact.address || "");
-      }
-
-    } catch (error: any) {
-      console.error("Error fetching content:", error);
-      toast.error("Gagal memuat konten");
+      if (sectionsRes.data) setSections(sectionsRes.data);
+      if (featuresRes.data) setFeatures(featuresRes.data);
+      if (contactRes.data) setContact(contactRes.data);
+    } catch (error) {
+      console.error("Error fetching data:", error);
+      toast.error("Gagal memuat data");
     } finally {
       setLoading(false);
     }
   };
 
-  const saveAboutSection = async () => {
+  const saveSection = async (section: any) => {
     try {
-      setSaving(true);
-
       const { error } = await supabase
         .from("landing_sections")
-        .upsert({
-          section_key: "about",
-          title: aboutTitle,
-          content: aboutContent
-        }, {
-          onConflict: "section_key"
-        });
+        .upsert(section);
 
       if (error) throw error;
-
-      toast.success("Section About berhasil disimpan");
-    } catch (error: any) {
-      console.error("Error saving about:", error);
-      toast.error("Gagal menyimpan section About");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const saveFeature = async (index: number) => {
-    try {
-      setSaving(true);
-      const feature = features[index];
-
-      const { error } = await supabase
-        .from("landing_features")
-        .upsert({
-          id: feature.id,
-          title: feature.title,
-          description: feature.description,
-          icon: feature.icon,
-          order_index: index
-        });
-
-      if (error) throw error;
-
-      toast.success("Fitur berhasil disimpan");
-    } catch (error: any) {
-      console.error("Error saving feature:", error);
-      toast.error("Gagal menyimpan fitur");
-    } finally {
-      setSaving(false);
+      toast.success("Section berhasil disimpan");
+      fetchData();
+    } catch (error) {
+      console.error("Error saving section:", error);
+      toast.error("Gagal menyimpan section");
     }
   };
 
   const addFeature = async () => {
     try {
-      const { data, error } = await supabase
-        .from("landing_features")
-        .insert({
-          title: "Fitur Baru",
-          description: "Deskripsi fitur",
-          icon: "Star",
-          order_index: features.length
-        })
-        .select()
-        .single();
+      const { error } = await supabase.from("landing_features").insert({
+        title: "New Feature",
+        description: "Feature description",
+        is_active: true,
+        display_order: features.length,
+      });
 
       if (error) throw error;
-
-      setFeatures([...features, data]);
-      toast.success("Fitur baru ditambahkan");
-    } catch (error: any) {
+      toast.success("Feature ditambahkan");
+      fetchData();
+    } catch (error) {
       console.error("Error adding feature:", error);
-      toast.error("Gagal menambah fitur");
+      toast.error("Gagal menambah feature");
+    }
+  };
+
+  const saveFeature = async (feature: any) => {
+    try {
+      const { error } = await supabase
+        .from("landing_features")
+        .upsert(feature);
+
+      if (error) throw error;
+      toast.success("Feature berhasil disimpan");
+      fetchData();
+    } catch (error) {
+      console.error("Error saving feature:", error);
+      toast.error("Gagal menyimpan feature");
     }
   };
 
   const deleteFeature = async (id: string) => {
-    if (!confirm("Yakin ingin menghapus fitur ini?")) return;
+    if (!confirm("Hapus feature ini?")) return;
 
     try {
       const { error } = await supabase
@@ -159,241 +96,218 @@ export default function AdminLandingContent() {
         .eq("id", id);
 
       if (error) throw error;
-
-      setFeatures(features.filter(f => f.id !== id));
-      toast.success("Fitur berhasil dihapus");
-    } catch (error: any) {
+      toast.success("Feature dihapus");
+      fetchData();
+    } catch (error) {
       console.error("Error deleting feature:", error);
-      toast.error("Gagal menghapus fitur");
+      toast.error("Gagal menghapus feature");
     }
   };
 
   const saveContact = async () => {
-    try {
-      setSaving(true);
+    if (!contact) return;
 
+    try {
       const { error } = await supabase
         .from("landing_contact")
-        .upsert({
-          id: 1,
-          email: contactEmail,
-          phone: contactPhone,
-          address: contactAddress
-        });
+        .upsert(contact);
 
       if (error) throw error;
-
-      toast.success("Informasi kontak berhasil disimpan");
-    } catch (error: any) {
+      toast.success("Kontak berhasil disimpan");
+    } catch (error) {
       console.error("Error saving contact:", error);
-      toast.error("Gagal menyimpan informasi kontak");
-    } finally {
-      setSaving(false);
+      toast.error("Gagal menyimpan kontak");
     }
   };
 
   if (loading) {
     return (
       <AdminLayout>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
+        <div className="p-6">Loading...</div>
       </AdminLayout>
     );
   }
 
   return (
     <AdminLayout>
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">📝 Kelola Konten Landing Page</h1>
-        <p className="text-muted-foreground">
-          Edit konten yang ditampilkan di halaman landing page
-        </p>
-      </div>
+      <div className="space-y-6 p-4 sm:p-6">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold">Landing Page Content</h1>
+          <p className="text-muted-foreground mt-2 text-sm sm:text-base">
+            Kelola konten landing page
+          </p>
+        </div>
 
-      <Tabs defaultValue="about" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="about">
-            <FileText className="w-4 h-4 mr-2" />
-            Tentang
-          </TabsTrigger>
-          <TabsTrigger value="features">
-            <Star className="w-4 h-4 mr-2" />
-            Fitur
-          </TabsTrigger>
-          <TabsTrigger value="contact">
-            <Mail className="w-4 h-4 mr-2" />
-            Kontak
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="about">
-          <Card>
-            <CardHeader>
-              <CardTitle>Section Tentang Kami</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="text-sm font-medium mb-2 block">Judul</label>
-                <Input
-                  value={aboutTitle}
-                  onChange={(e) => setAboutTitle(e.target.value)}
-                  placeholder="Masukkan judul section"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-2 block">Konten</label>
-                <Textarea
-                  value={aboutContent}
-                  onChange={(e) => setAboutContent(e.target.value)}
-                  placeholder="Masukkan konten section"
-                  rows={8}
-                />
-              </div>
-              <Button onClick={saveAboutSection} disabled={saving}>
-                {saving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Menyimpan...
-                  </>
-                ) : (
-                  <>
+        {/* Sections */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Sections</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {sections.map((section) => (
+              <div key={section.id} className="border p-4 rounded-lg space-y-3">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-semibold">{section.section_key}</h3>
+                  <Button
+                    size="sm"
+                    onClick={() => saveSection(section)}
+                  >
                     <Save className="w-4 h-4 mr-2" />
-                    Simpan
-                  </>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
+                    Save
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  <Label>Title</Label>
+                  <Input
+                    value={section.title || ""}
+                    onChange={(e) =>
+                      setSections(sections.map((s) =>
+                        s.id === section.id ? { ...s, title: e.target.value } : s
+                      ))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Subtitle</Label>
+                  <Input
+                    value={section.subtitle || ""}
+                    onChange={(e) =>
+                      setSections(sections.map((s) =>
+                        s.id === section.id ? { ...s, subtitle: e.target.value } : s
+                      ))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Content</Label>
+                  <Textarea
+                    value={section.content || ""}
+                    onChange={(e) =>
+                      setSections(sections.map((s) =>
+                        s.id === section.id ? { ...s, content: e.target.value } : s
+                      ))
+                    }
+                    rows={4}
+                  />
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
 
-        <TabsContent value="features">
-          <div className="space-y-4">
-            {features.map((feature, index) => (
-              <Card key={feature.id}>
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <span>Fitur #{index + 1}</span>
+        {/* Features */}
+        <Card>
+          <CardHeader>
+            <div className="flex justify-between items-center">
+              <CardTitle>Features</CardTitle>
+              <Button onClick={addFeature} size="sm">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Feature
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {features.map((feature) => (
+              <div key={feature.id} className="border p-4 rounded-lg space-y-3">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-semibold text-sm">Feature #{features.indexOf(feature) + 1}</h3>
+                  <div className="flex gap-2">
                     <Button
-                      variant="destructive"
                       size="sm"
+                      onClick={() => saveFeature(feature)}
+                    >
+                      <Save className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
                       onClick={() => deleteFeature(feature.id)}
                     >
-                      Hapus
+                      <Trash2 className="w-4 h-4" />
                     </Button>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">Judul</label>
-                    <Input
-                      value={feature.title}
-                      onChange={(e) => {
-                        const newFeatures = [...features];
-                        newFeatures[index].title = e.target.value;
-                        setFeatures(newFeatures);
-                      }}
-                      placeholder="Judul fitur"
-                    />
                   </div>
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">Deskripsi</label>
-                    <Textarea
-                      value={feature.description}
-                      onChange={(e) => {
-                        const newFeatures = [...features];
-                        newFeatures[index].description = e.target.value;
-                        setFeatures(newFeatures);
-                      }}
-                      placeholder="Deskripsi fitur"
-                      rows={3}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">Icon (Lucide Icon Name)</label>
-                    <Input
-                      value={feature.icon}
-                      onChange={(e) => {
-                        const newFeatures = [...features];
-                        newFeatures[index].icon = e.target.value;
-                        setFeatures(newFeatures);
-                      }}
-                      placeholder="Contoh: Star, Zap, Check"
-                    />
-                  </div>
-                  <Button onClick={() => saveFeature(index)} disabled={saving}>
-                    {saving ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Menyimpan...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-4 h-4 mr-2" />
-                        Simpan
-                      </>
-                    )}
-                  </Button>
-                </CardContent>
-              </Card>
+                </div>
+                <div className="space-y-2">
+                  <Label>Title</Label>
+                  <Input
+                    value={feature.title || ""}
+                    onChange={(e) =>
+                      setFeatures(features.map((f) =>
+                        f.id === feature.id ? { ...f, title: e.target.value } : f
+                      ))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <Textarea
+                    value={feature.description || ""}
+                    onChange={(e) =>
+                      setFeatures(features.map((f) =>
+                        f.id === feature.id ? { ...f, description: e.target.value } : f
+                      ))
+                    }
+                    rows={3}
+                  />
+                </div>
+              </div>
             ))}
+          </CardContent>
+        </Card>
 
-            <Button onClick={addFeature} variant="outline" className="w-full">
-              Tambah Fitur Baru
-            </Button>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="contact">
+        {/* Contact */}
+        {contact && (
           <Card>
             <CardHeader>
-              <CardTitle>Informasi Kontak</CardTitle>
+              <div className="flex justify-between items-center">
+                <CardTitle>Contact Information</CardTitle>
+                <Button onClick={saveContact} size="sm">
+                  <Save className="w-4 h-4 mr-2" />
+                  Save
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div>
-                <label className="text-sm font-medium mb-2 block">Email</label>
+              <div className="space-y-2">
+                <Label>Email</Label>
                 <Input
                   type="email"
-                  value={contactEmail}
-                  onChange={(e) => setContactEmail(e.target.value)}
-                  placeholder="email@example.com"
+                  value={contact.email || ""}
+                  onChange={(e) => setContact({ ...contact, email: e.target.value })}
+                  placeholder="contact@example.com"
                 />
               </div>
-              <div>
-                <label className="text-sm font-medium mb-2 block">Telepon</label>
+              <div className="space-y-2">
+                <Label>Phone</Label>
                 <Input
-                  type="tel"
-                  value={contactPhone}
-                  onChange={(e) => setContactPhone(e.target.value)}
-                  placeholder="+62 xxx-xxxx-xxxx"
+                  value={contact.phone || ""}
+                  onChange={(e) => setContact({ ...contact, phone: e.target.value })}
+                  placeholder="+62 xxx xxx xxx"
                 />
               </div>
-              <div>
-                <label className="text-sm font-medium mb-2 block">Alamat</label>
+              <div className="space-y-2">
+                <Label>WhatsApp</Label>
+                <Input
+                  value={contact.whatsapp || ""}
+                  onChange={(e) => setContact({ ...contact, whatsapp: e.target.value })}
+                  placeholder="+62 xxx xxx xxx"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Address</Label>
                 <Textarea
-                  value={contactAddress}
-                  onChange={(e) => setContactAddress(e.target.value)}
-                  placeholder="Alamat lengkap"
+                  value={contact.address || ""}
+                  onChange={(e) => setContact({ ...contact, address: e.target.value })}
                   rows={3}
+                  placeholder="Alamat lengkap"
                 />
               </div>
-              <Button onClick={saveContact} disabled={saving}>
-                {saving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Menyimpan...
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4 mr-2" />
-                    Simpan
-                  </>
-                )}
-              </Button>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        )}
+      </div>
     </AdminLayout>
   );
-}
+};
+
+export default AdminLandingContent;

@@ -330,7 +330,7 @@ export const CrmChat = () => {
     } catch (error: any) {
       console.error('Error sending message:', error);
       toast.error("Gagal mengirim pesan: " + (error.message || 'Unknown error'));
-      setNewMessage(messageContent); // Restore message on error
+      setNewMessage(newMessage); // Restore message on error
     } finally {
       setSending(false);
     }

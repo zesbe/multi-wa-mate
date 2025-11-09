@@ -133,9 +133,28 @@ export const SubscriptionStatus = () => {
         )}
 
         {subscription.expires_at && (
-          <div className="text-xs text-muted-foreground pt-2 border-t">
-            Berakhir: {new Date(subscription.expires_at).toLocaleDateString("id-ID")}
-          </div>
+          <Alert variant={
+            new Date(subscription.expires_at) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+              ? "destructive"
+              : "default"
+          } className="mt-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Expired:</strong> {new Date(subscription.expires_at).toLocaleDateString("id-ID", {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric'
+              })}
+              {new Date(subscription.expires_at) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) && (
+                <span className="block mt-1 text-sm">
+                  {new Date(subscription.expires_at) < new Date()
+                    ? "⚠️ Akun Anda telah expired! Hubungi admin untuk perpanjangan."
+                    : `⏰ Akun akan expired dalam ${Math.ceil((new Date(subscription.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24))} hari.`
+                  }
+                </span>
+              )}
+            </AlertDescription>
+          </Alert>
         )}
       </CardContent>
     </Card>

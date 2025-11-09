@@ -343,7 +343,8 @@ export const AdminUsers = () => {
                       <TableHead className="hidden md:table-cell">Email</TableHead>
                       <TableHead>Role</TableHead>
                       <TableHead className="hidden lg:table-cell">Subscription</TableHead>
-                      <TableHead className="hidden lg:table-cell">Status</TableHead>
+                      <TableHead className="hidden xl:table-cell">Status</TableHead>
+                      <TableHead className="hidden xl:table-cell">Expires</TableHead>
                       <TableHead className="hidden sm:table-cell">Terdaftar</TableHead>
                       <TableHead className="text-right">Action</TableHead>
                     </TableRow>
@@ -386,7 +387,7 @@ export const AdminUsers = () => {
                             <span className="text-sm text-muted-foreground">No Plan</span>
                           )}
                         </TableCell>
-                        <TableCell className="hidden lg:table-cell">
+                        <TableCell className="hidden xl:table-cell">
                           {user.subscription ? (
                             <Badge
                               variant={
@@ -399,6 +400,30 @@ export const AdminUsers = () => {
                             </Badge>
                           ) : (
                             <Badge variant="secondary">Inactive</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="hidden xl:table-cell">
+                          {user.subscription?.expires_at ? (
+                            <div className="text-sm">
+                              <div className={
+                                new Date(user.subscription.expires_at) < new Date()
+                                  ? "text-destructive font-semibold"
+                                  : new Date(user.subscription.expires_at) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+                                  ? "text-warning font-semibold"
+                                  : "text-muted-foreground"
+                              }>
+                                {new Date(user.subscription.expires_at).toLocaleDateString("id-ID", {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric'
+                                })}
+                              </div>
+                              {new Date(user.subscription.expires_at) < new Date() && (
+                                <Badge variant="destructive" className="text-xs mt-1">Expired</Badge>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">-</span>
                           )}
                         </TableCell>
                         <TableCell className="hidden sm:table-cell">
