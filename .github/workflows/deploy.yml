@@ -22,17 +22,17 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy files to VPS (per-PR folder)
+      - name: Deploy backend (railway-service) to VPS
         run: |
           REF="${{ github.head_ref || github.ref_name }}"
 
           # Create target directory on VPS
           ssh -i ~/.ssh/id_rsa ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "mkdir -p ~/apps/${REF}"
 
-          # Package and transfer files (excluding .git)
-          tar czf - --exclude='.git' . | ssh -i ~/.ssh/id_rsa ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "cd ~/apps/${REF} && tar xzf -"
+          # Package and transfer only railway-service folder
+          tar czf - -C railway-service . | ssh -i ~/.ssh/id_rsa ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "cd ~/apps/${REF} && tar xzf -"
 
-      - name: Remote deploy (build & start)
+      - name: Remote deploy (install & start backend)
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -42,21 +42,20 @@ jobs:
             set -e
             REF=${{ github.head_ref || github.ref_name }}
             TARGET=~/apps/${REF}
-            APP_NAME="app-${REF//\//-}"
+            APP_NAME="backend-${REF//\//-}"
 
             cd $TARGET
 
-            # Install dependencies and build
-            npm ci || true
-            npm run build || true
+            # Install dependencies (no build needed for backend)
+            npm ci
 
             # Start or restart PM2 app for this branch only
             if pm2 describe "$APP_NAME" > /dev/null 2>&1; then
-              echo "Restarting existing PM2 app: $APP_NAME"
+              echo "Restarting existing PM2 backend: $APP_NAME"
               pm2 restart "$APP_NAME"
             else
-              echo "Starting new PM2 app: $APP_NAME"
-              pm2 start npm --name "$APP_NAME" -- start
+              echo "Starting new PM2 backend: $APP_NAME"
+              pm2 start index.js --name "$APP_NAME"
             fi
 
             pm2 save
