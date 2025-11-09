@@ -24,14 +24,13 @@ jobs:
 
       - name: Deploy files to VPS (per-PR folder)
         run: |
-          REF=${{ github.head_ref || github.ref_name }}
-          TARGET=~/apps/${REF}
+          REF="${{ github.head_ref || github.ref_name }}"
 
           # Create target directory on VPS
-          ssh -i ~/.ssh/id_rsa ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "mkdir -p $TARGET"
+          ssh -i ~/.ssh/id_rsa ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "mkdir -p ~/apps/${REF}"
 
           # Package and transfer files (excluding .git)
-          tar czf - --exclude='.git' . | ssh -i ~/.ssh/id_rsa ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "cd $TARGET && tar xzf -"
+          tar czf - --exclude='.git' . | ssh -i ~/.ssh/id_rsa ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "cd ~/apps/${REF} && tar xzf -"
 
       - name: Remote deploy (build & start)
         uses: appleboy/ssh-action@v1.2.0
