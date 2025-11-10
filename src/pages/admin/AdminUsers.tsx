@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Shield, User, Mail, Calendar, Plus, Edit, Trash2 } from "lucide-react";
+import { Shield, User, Mail, Calendar, Plus, Edit, Trash2, Crown } from "lucide-react";
 import { z } from "zod";
 import {
   Table,
@@ -33,10 +33,19 @@ interface UserData {
   role: string;
   created_at: string;
   subscription?: {
+    id: string;
+    plan_id: string;
     plan_name: string;
     status: string;
     expires_at: string | null;
   } | null;
+}
+
+interface Plan {
+  id: string;
+  name: string;
+  duration_months: number;
+  price: number;
 }
 
 const userSchema = z.object({
@@ -60,10 +69,31 @@ export const AdminUsers = () => {
     role: "user",
   });
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof UserFormData, string>>>({});
+  const [subscriptionDialogOpen, setSubscriptionDialogOpen] = useState(false);
+  const [managingUser, setManagingUser] = useState<UserData | null>(null);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [selectedPlan, setSelectedPlan] = useState<string>("");
+  const [extendMonths, setExtendMonths] = useState<number>(1);
 
   useEffect(() => {
     fetchUsers();
+    fetchPlans();
   }, []);
+
+  const fetchPlans = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("plans")
+        .select("*")
+        .eq("is_active", true)
+        .order("price", { ascending: true });
+
+      if (error) throw error;
+      setPlans(data || []);
+    } catch (error) {
+      console.error("Error fetching plans:", error);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -89,7 +119,9 @@ export const AdminUsers = () => {
       const { data: subscriptionsData } = await supabase
         .from("user_subscriptions")
         .select(`
+          id,
           user_id,
+          plan_id,
           status,
           expires_at,
           plans (
@@ -109,6 +141,8 @@ export const AdminUsers = () => {
           role: roleData?.role || "user",
           created_at: profile.created_at,
           subscription: subscriptionData ? {
+            id: subscriptionData.id,
+            plan_id: subscriptionData.plan_id,
             plan_name: (subscriptionData.plans as any)?.name || "No Plan",
             status: subscriptionData.status,
             expires_at: subscriptionData.expires_at,
@@ -225,6 +259,75 @@ export const AdminUsers = () => {
     });
     setFormErrors({});
     setEditingUser(null);
+  };
+
+  const handleManageSubscription = (user: UserData) => {
+    setManagingUser(user);
+    if (user.subscription) {
+      setSelectedPlan(user.subscription.plan_id);
+    } else {
+      setSelectedPlan(plans[0]?.id || "");
+    }
+    setExtendMonths(1);
+    setSubscriptionDialogOpen(true);
+  };
+
+  const handleSaveSubscription = async () => {
+    if (!managingUser || !selectedPlan) {
+      toast.error("Pilih plan terlebih dahulu");
+      return;
+    }
+
+    try {
+      const plan = plans.find(p => p.id === selectedPlan);
+      if (!plan) throw new Error("Plan tidak ditemukan");
+
+      const durationMs = extendMonths * 30 * 24 * 60 * 60 * 1000;
+
+      if (managingUser.subscription) {
+        // Extend existing subscription
+        const currentExpiry = managingUser.subscription.expires_at 
+          ? new Date(managingUser.subscription.expires_at) 
+          : new Date();
+        const baseDate = currentExpiry > new Date() ? currentExpiry : new Date();
+        const newExpiresAt = new Date(baseDate.getTime() + durationMs);
+
+        const { error } = await supabase
+          .from("user_subscriptions")
+          .update({
+            plan_id: selectedPlan,
+            expires_at: newExpiresAt.toISOString(),
+            status: 'active'
+          })
+          .eq("id", managingUser.subscription.id);
+
+        if (error) throw error;
+        toast.success(`Subscription berhasil diperpanjang hingga ${newExpiresAt.toLocaleDateString("id-ID")}`);
+      } else {
+        // Create new subscription
+        const newExpiresAt = new Date(Date.now() + durationMs);
+
+        const { error } = await supabase
+          .from("user_subscriptions")
+          .insert({
+            user_id: managingUser.id,
+            plan_id: selectedPlan,
+            status: 'active',
+            starts_at: new Date().toISOString(),
+            expires_at: newExpiresAt.toISOString(),
+          });
+
+        if (error) throw error;
+        toast.success(`Subscription berhasil dibuat hingga ${newExpiresAt.toLocaleDateString("id-ID")}`);
+      }
+
+      setSubscriptionDialogOpen(false);
+      setManagingUser(null);
+      fetchUsers();
+    } catch (error) {
+      console.error("Error saving subscription:", error);
+      toast.error("Gagal menyimpan subscription");
+    }
   };
 
   return (
@@ -437,6 +540,14 @@ export const AdminUsers = () => {
                             <Button
                               variant="outline"
                               size="sm"
+                              onClick={() => handleManageSubscription(user)}
+                              title="Kelola Subscription"
+                            >
+                              <Crown className="w-3 h-3 sm:w-4 sm:h-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
                               onClick={() => handleEdit(user)}
                             >
                               <Edit className="w-3 h-3 sm:w-4 sm:h-4" />
@@ -458,6 +569,101 @@ export const AdminUsers = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Subscription Management Dialog */}
+        <Dialog open={subscriptionDialogOpen} onOpenChange={setSubscriptionDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Kelola Subscription</DialogTitle>
+              <DialogDescription>
+                {managingUser?.subscription 
+                  ? `Perpanjang atau ubah subscription untuk ${managingUser?.full_name}`
+                  : `Buat subscription baru untuk ${managingUser?.full_name}`
+                }
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {managingUser?.subscription && (
+                <div className="p-4 rounded-lg bg-muted">
+                  <p className="text-sm font-medium mb-2">Status Saat Ini:</p>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Plan:</span>
+                      <span className="font-medium">{managingUser.subscription.plan_name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Status:</span>
+                      <Badge variant={managingUser.subscription.status === 'active' ? 'default' : 'secondary'}>
+                        {managingUser.subscription.status}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Expires:</span>
+                      <span className={
+                        managingUser.subscription.expires_at && new Date(managingUser.subscription.expires_at) < new Date()
+                          ? "text-destructive font-semibold"
+                          : "font-medium"
+                      }>
+                        {managingUser.subscription.expires_at 
+                          ? new Date(managingUser.subscription.expires_at).toLocaleDateString("id-ID")
+                          : "-"
+                        }
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label>Pilih Paket</Label>
+                <Select value={selectedPlan} onValueChange={setSelectedPlan}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih paket" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {plans.map((plan) => (
+                      <SelectItem key={plan.id} value={plan.id}>
+                        {plan.name} - Rp {plan.price.toLocaleString("id-ID")} ({plan.duration_months} bulan)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Perpanjang Durasi (bulan)</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="24"
+                  value={extendMonths}
+                  onChange={(e) => setExtendMonths(parseInt(e.target.value) || 1)}
+                  placeholder="Jumlah bulan"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {managingUser?.subscription 
+                    ? `Akan memperpanjang dari ${managingUser.subscription.expires_at ? new Date(managingUser.subscription.expires_at).toLocaleDateString("id-ID") : "sekarang"}`
+                    : "Mulai dari hari ini"
+                  }
+                </p>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setSubscriptionDialogOpen(false)} 
+                  className="flex-1"
+                >
+                  Batal
+                </Button>
+                <Button onClick={handleSaveSubscription} className="flex-1">
+                  {managingUser?.subscription ? "Perpanjang" : "Buat Subscription"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );
