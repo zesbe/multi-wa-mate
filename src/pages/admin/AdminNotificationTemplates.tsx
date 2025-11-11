@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { logAudit } from "@/utils/auditLogger";
 import {
   Dialog,
   DialogContent,
@@ -52,7 +53,7 @@ export const AdminNotificationTemplates = () => {
 
   const createMutation = useMutation({
     mutationFn: async (newTemplate: any) => {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('notification_templates')
         .insert([{
           name: newTemplate.name,
@@ -61,9 +62,25 @@ export const AdminNotificationTemplates = () => {
           content: newTemplate.content,
           variables: newTemplate.variables.split(',').map((v: string) => v.trim()).filter(Boolean),
           status: 'active'
-        }]);
+        }])
+        .select()
+        .single();
       
       if (error) throw error;
+      
+      // Log audit
+      await logAudit({
+        action: 'create',
+        entity_type: 'notification_template',
+        entity_id: data?.id,
+        new_values: {
+          name: newTemplate.name,
+          type: newTemplate.type,
+          subject: newTemplate.subject
+        }
+      });
+      
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notification-templates'] });
@@ -77,7 +94,19 @@ export const AdminNotificationTemplates = () => {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ id, template }: { id: string; template: any }) => {
+      // Log audit before delete
+      await logAudit({
+        action: 'delete',
+        entity_type: 'notification_template',
+        entity_id: id,
+        old_values: {
+          name: template.name,
+          type: template.type,
+          usage_count: template.usage_count
+        }
+      });
+      
       const { error } = await supabase
         .from('notification_templates')
         .delete()
@@ -98,9 +127,9 @@ export const AdminNotificationTemplates = () => {
     createMutation.mutate(formData);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = (template: any) => {
     if (confirm('Are you sure you want to delete this template?')) {
-      deleteMutation.mutate(id);
+      deleteMutation.mutate({ id: template.id, template });
     }
   };
 
@@ -277,7 +306,7 @@ export const AdminNotificationTemplates = () => {
                       size="icon" 
                       variant="ghost" 
                       className="text-destructive"
-                      onClick={() => handleDelete(template.id)}
+                      onClick={() => handleDelete(template)}
                       disabled={deleteMutation.isPending}
                     >
                       <Trash2 className="w-4 h-4" />

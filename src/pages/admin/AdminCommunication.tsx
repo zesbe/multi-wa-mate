@@ -1,12 +1,23 @@
 import { AdminLayout } from "@/components/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Mail, MessageSquare, Bell, Send, CheckCircle2 } from "lucide-react";
+import { Mail, MessageSquare, Bell, Send, CheckCircle2, BookOpen } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useState } from "react";
+import { CommunicationGuide } from "@/components/admin/CommunicationGuide";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 export const AdminCommunication = () => {
+  const [showGuide, setShowGuide] = useState(false);
+  
   const { data: stats, isLoading } = useQuery({
     queryKey: ['communication-stats'],
     queryFn: async () => {
@@ -87,10 +98,20 @@ export const AdminCommunication = () => {
               Manage and monitor all user communications
             </p>
           </div>
-          <Button className="gap-2">
-            <Send className="w-4 h-4" />
-            Send Message
-          </Button>
+          <Dialog open={showGuide} onOpenChange={setShowGuide}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <BookOpen className="w-4 h-4" />
+                Panduan
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Panduan Communication Hub</DialogTitle>
+              </DialogHeader>
+              <CommunicationGuide />
+            </DialogContent>
+          </Dialog>
         </div>
 
         {/* Key Metrics */}
