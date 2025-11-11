@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { MessageSquare, Send, Users, Radio, AlertCircle, CheckCircle2, Loader2, Filter, Plus, Smartphone } from "lucide-react";
+import { MessageSquare, Send, Users, Radio, AlertCircle, CheckCircle2, Loader2, Filter, Plus, Smartphone, FileText } from "lucide-react";
 import { logAudit } from "@/utils/auditLogger";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useNavigate } from "react-router-dom";
@@ -39,6 +39,16 @@ interface BroadcastHistory {
   target_count: number;
 }
 
+interface Template {
+  id: string;
+  name: string;
+  category: string;
+  message_template: string;
+  description: string;
+  variables: any;
+  usage_count: number;
+}
+
 export const AdminBroadcast = () => {
   const navigate = useNavigate();
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -52,9 +62,12 @@ export const AdminBroadcast = () => {
   const [filterTag, setFilterTag] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [broadcastHistory, setBroadcastHistory] = useState<BroadcastHistory[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
 
   useEffect(() => {
     fetchData();
+    fetchTemplates();
     
     // Real-time updates for contacts
     const channel = supabase
@@ -146,6 +159,35 @@ export const AdminBroadcast = () => {
       setBroadcastHistory(history);
     } catch (error: any) {
       console.error("Error fetching broadcast history:", error);
+    }
+  };
+
+  const fetchTemplates = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("broadcast_templates")
+        .select("*")
+        .eq("is_active", true)
+        .order("usage_count", { ascending: false });
+
+      if (error) throw error;
+      setTemplates(data || []);
+    } catch (error: any) {
+      console.error("Error fetching templates:", error);
+    }
+  };
+
+  const handleTemplateSelect = async (templateId: string) => {
+    setSelectedTemplate(templateId);
+    const template = templates.find(t => t.id === templateId);
+    if (template) {
+      setMessage(template.message_template);
+      
+      // Increment usage count
+      await supabase
+        .from("broadcast_templates")
+        .update({ usage_count: template.usage_count + 1 })
+        .eq("id", templateId);
     }
   };
 
@@ -471,6 +513,40 @@ export const AdminBroadcast = () => {
               ) : (
                 <p className="text-xs text-muted-foreground">
                   Using your device: {devices.find(d => d.id === selectedDevice)?.device_name || "None selected (will use cloud)"}
+                </p>
+              )}
+            </div>
+
+            {/* Template Selector */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Use Template (Optional)</Label>
+                <Button
+                  variant="link"
+                  size="sm"
+                  onClick={() => navigate("/admin/templates")}
+                  className="h-auto p-0 text-xs"
+                >
+                  <FileText className="w-3 h-3 mr-1" />
+                  Manage Templates
+                </Button>
+              </div>
+              <Select value={selectedTemplate} onValueChange={handleTemplateSelect}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a template or type your own message" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None - Custom Message</SelectItem>
+                  {templates.map(template => (
+                    <SelectItem key={template.id} value={template.id}>
+                      {template.name} ({template.category})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedTemplate && selectedTemplate !== "none" && (
+                <p className="text-xs text-muted-foreground">
+                  Template loaded. You can edit the message below.
                 </p>
               )}
             </div>

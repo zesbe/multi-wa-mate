@@ -206,21 +206,22 @@ export default function AdminReminders() {
     <AdminLayout>
       <div className="space-y-6 p-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
-              <Bell className="w-8 h-8 text-primary" />
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground flex items-center gap-2">
+              <Bell className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
               Reminder Management
             </h1>
-            <p className="text-muted-foreground mt-1">
+            <p className="text-sm sm:text-base text-muted-foreground mt-1">
               Automated WhatsApp reminders for subscription renewals and payments
             </p>
           </div>
           <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
             <DialogTrigger asChild>
-              <Button className="gap-2">
+              <Button className="gap-2 w-full sm:w-auto">
                 <Plus className="w-4 h-4" />
-                Create Reminder
+                <span className="hidden sm:inline">Create Reminder</span>
+                <span className="sm:hidden">Create</span>
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -417,14 +418,16 @@ export default function AdminReminders() {
 
         {/* Main Tabs */}
         <Tabs defaultValue="automatic" className="space-y-4">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="automatic" className="gap-2">
-              <Clock className="w-4 h-4" />
-              Automatic Reminders
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="automatic" className="gap-2 text-xs sm:text-sm">
+              <Clock className="w-3 h-3 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">Automatic Reminders</span>
+              <span className="sm:hidden">Automatic</span>
             </TabsTrigger>
-            <TabsTrigger value="manual" className="gap-2">
-              <Send className="w-4 h-4" />
-              Manual Send
+            <TabsTrigger value="manual" className="gap-2 text-xs sm:text-sm">
+              <Send className="w-3 h-3 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">Manual Send</span>
+              <span className="sm:hidden">Manual</span>
             </TabsTrigger>
           </TabsList>
 

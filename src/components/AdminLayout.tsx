@@ -47,6 +47,8 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
     { icon: LayoutDashboard, label: "Dashboard", path: "/admin/dashboard" },
     { icon: Smartphone, label: "My Devices", path: "/admin/devices" },
     { icon: MessageSquare, label: "Broadcast", path: "/admin/broadcast" },
+    { icon: FileText, label: "Templates", path: "/admin/templates" },
+    { icon: Bell, label: "Reminders", path: "/admin/reminders" },
     { icon: Users, label: "Kelola User", path: "/admin/users" },
     { icon: CreditCard, label: "Kelola Plan", path: "/admin/plans" },
     { icon: Video, label: "Kelola Tutorial", path: "/admin/tutorials" },
@@ -64,7 +66,6 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
     { icon: CreditCard, label: "Payments", path: "/admin/payment-analytics" },
     { icon: Send, label: "Communication", path: "/admin/communication" },
     { icon: Mail, label: "Templates", path: "/admin/notification-templates" },
-    { icon: Bell, label: "Reminders", path: "/admin/reminders" },
   ];
 
   return (
