@@ -988,51 +988,6 @@ export type Database = {
         }
         Relationships: []
       }
-      notification_templates: {
-        Row: {
-          content: string
-          created_at: string | null
-          created_by: string | null
-          id: string
-          last_used_at: string | null
-          name: string
-          status: string
-          subject: string | null
-          type: string
-          updated_at: string | null
-          usage_count: number | null
-          variables: string[] | null
-        }
-        Insert: {
-          content: string
-          created_at?: string | null
-          created_by?: string | null
-          id?: string
-          last_used_at?: string | null
-          name: string
-          status?: string
-          subject?: string | null
-          type: string
-          updated_at?: string | null
-          usage_count?: number | null
-          variables?: string[] | null
-        }
-        Update: {
-          content?: string
-          created_at?: string | null
-          created_by?: string | null
-          id?: string
-          last_used_at?: string | null
-          name?: string
-          status?: string
-          subject?: string | null
-          type?: string
-          updated_at?: string | null
-          usage_count?: number | null
-          variables?: string[] | null
-        }
-        Relationships: []
-      }
       payments: {
         Row: {
           amount: number

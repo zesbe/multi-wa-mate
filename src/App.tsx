@@ -43,7 +43,6 @@ import AdminRevenue from "./pages/admin/AdminRevenue";
 import AdminUserActivity from "./pages/admin/AdminUserActivity";
 import AdminSubscriptionAnalytics from "./pages/admin/AdminSubscriptionAnalytics";
 import AdminPaymentAnalytics from "./pages/admin/AdminPaymentAnalytics";
-import AdminNotificationTemplates from "./pages/admin/AdminNotificationTemplates";
 import AdminBroadcast from "./pages/admin/AdminBroadcast";
 import AdminDevices from "./pages/admin/AdminDevices";
 import AdminReminders from "./pages/admin/AdminReminders";
@@ -113,7 +112,6 @@ const App = () => (
             <Route path="/admin/user-activity" element={<ProtectedRoute requiredRole="admin"><AdminUserActivity /></ProtectedRoute>} />
             <Route path="/admin/subscription-analytics" element={<ProtectedRoute requiredRole="admin"><AdminSubscriptionAnalytics /></ProtectedRoute>} />
             <Route path="/admin/payment-analytics" element={<ProtectedRoute requiredRole="admin"><AdminPaymentAnalytics /></ProtectedRoute>} />
-            <Route path="/admin/notification-templates" element={<ProtectedRoute requiredRole="admin"><AdminNotificationTemplates /></ProtectedRoute>} />
             <Route path="/admin/broadcast" element={<ProtectedRoute requiredRole="admin"><AdminBroadcast /></ProtectedRoute>} />
             <Route path="/admin/devices" element={<ProtectedRoute requiredRole="admin"><AdminDevices /></ProtectedRoute>} />
             <Route path="/admin/templates" element={<ProtectedRoute requiredRole="admin"><AdminTemplates /></ProtectedRoute>} />
