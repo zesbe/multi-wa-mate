@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Shield, User, Mail, Calendar, Plus, Edit, Trash2, Crown } from "lucide-react";
 import { z } from "zod";
+import { optionalPasswordSchema } from "@/utils/passwordValidation";
 import {
   Table,
   TableBody,
@@ -50,7 +51,7 @@ interface Plan {
 
 const userSchema = z.object({
   email: z.string().email("Email tidak valid").trim(),
-  password: z.string().min(6, "Password minimal 6 karakter").optional(),
+  password: optionalPasswordSchema, // Strong password validation (12+ chars, complexity)
   full_name: z.string().min(1, "Nama harus diisi").trim(),
   role: z.enum(["user", "admin"]),
 });

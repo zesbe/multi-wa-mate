@@ -3,8 +3,60 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.75.0";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-signature',
 };
+
+/**
+ * Verify webhook signature using HMAC SHA-256
+ * @param payload - Raw request body as string
+ * @param signature - Signature from webhook header (hex encoded)
+ * @param secret - Webhook secret key
+ * @returns true if signature is valid
+ */
+async function verifyWebhookSignature(
+  payload: string,
+  signature: string,
+  secret: string
+): Promise<boolean> {
+  try {
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secret);
+    const payloadData = encoder.encode(payload);
+
+    // Import secret as HMAC key
+    const key = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+
+    // Generate HMAC signature
+    const signatureBuffer = await crypto.subtle.sign('HMAC', key, payloadData);
+
+    // Convert to hex string
+    const hashArray = Array.from(new Uint8Array(signatureBuffer));
+    const expectedSignature = hashArray
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    // Constant-time comparison to prevent timing attacks
+    if (signature.length !== expectedSignature.length) {
+      return false;
+    }
+
+    let result = 0;
+    for (let i = 0; i < signature.length; i++) {
+      result |= signature.charCodeAt(i) ^ expectedSignature.charCodeAt(i);
+    }
+
+    return result === 0;
+  } catch (error) {
+    console.error('Error verifying signature:', error);
+    return false;
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -17,7 +69,55 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const webhookData = await req.json();
+    // Get webhook secret from environment
+    const webhookSecret = Deno.env.get('PAKASIR_WEBHOOK_SECRET');
+    if (!webhookSecret) {
+      console.error('PAKASIR_WEBHOOK_SECRET not configured');
+      throw new Error('Webhook secret not configured');
+    }
+
+    // Get signature from headers (check multiple possible header names)
+    const signature =
+      req.headers.get('x-webhook-signature') ||
+      req.headers.get('x-pakasir-signature') ||
+      req.headers.get('x-signature');
+
+    if (!signature) {
+      console.error('Missing webhook signature header');
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized: Missing webhook signature' }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Read raw body for signature verification
+    const rawBody = await req.text();
+
+    // Verify signature
+    const isValidSignature = await verifyWebhookSignature(
+      rawBody,
+      signature,
+      webhookSecret
+    );
+
+    if (!isValidSignature) {
+      console.error('Invalid webhook signature');
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized: Invalid webhook signature' }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    console.log('✅ Webhook signature verified');
+
+    // Parse JSON after signature verification
+    const webhookData = JSON.parse(rawBody);
     console.log('Received webhook:', webhookData);
 
     const { order_id, amount, status, payment_method, completed_at, project } = webhookData;
