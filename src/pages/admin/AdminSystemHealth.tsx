@@ -149,8 +149,8 @@ export const AdminSystemHealth = () => {
       };
 
       try {
-        // Get Baileys service URL from environment
-        const baileysUrl = import.meta.env.VITE_BAILEYS_SERVICE_URL || 'https://wa-gateway-production-5c1c.up.railway.app';
+        // Get Baileys service URL - Railway Production Server
+        const baileysUrl = 'https://multi-wa-mate-production.up.railway.app';
         
         // Get connected devices info first
         const { data: connectedDevices, count: connectedCount } = await supabase
