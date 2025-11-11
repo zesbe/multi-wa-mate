@@ -704,31 +704,33 @@ export const AdminUsers = () => {
                         </div>
 
                         {/* Action Buttons */}
-                        <div className="flex gap-2 pt-3 border-t">
+                        <div className="grid grid-cols-2 gap-2 pt-3 border-t">
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleManageSubscription(user)}
-                            className="flex-1"
+                            className="w-full"
                           >
-                            <Crown className="w-4 h-4 mr-2" />
-                            Subscription
+                            <Crown className="w-4 h-4 mr-1" />
+                            <span className="text-xs">Subscription</span>
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleEdit(user)}
-                            className="flex-1"
+                            className="w-full"
                           >
-                            <Edit className="w-4 h-4 mr-2" />
-                            Edit
+                            <Edit className="w-4 h-4 mr-1" />
+                            <span className="text-xs">Edit</span>
                           </Button>
                           <Button
                             variant="destructive"
                             size="sm"
                             onClick={() => handleDelete(user.id)}
+                            className="w-full col-span-2"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            <span className="text-xs">Hapus User</span>
                           </Button>
                         </div>
                       </CardContent>
