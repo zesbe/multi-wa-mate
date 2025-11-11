@@ -108,13 +108,14 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto">
-        <div className="sticky top-0 z-10 bg-background border-b">
+      <main className="flex-1 min-h-screen flex flex-col">
+        {/* Sticky Header */}
+        <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b shadow-sm">
           <div className="container mx-auto px-4 md:px-6 py-3 flex items-center justify-between gap-3">
             <Button
               variant="ghost"
               size="icon"
-              className="lg:hidden"
+              className="lg:hidden shrink-0"
               onClick={() => setSidebarOpen(true)}
             >
               <Menu className="w-5 h-5" />
@@ -126,16 +127,20 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
                 variant="outline"
                 size="sm"
                 onClick={signOut}
-                className="border-red-200 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+                className="border-red-200 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950 shrink-0"
               >
-                <LogOut className="w-4 h-4 mr-2" />
+                <LogOut className="w-4 h-4 sm:mr-2" />
                 <span className="hidden sm:inline">Logout</span>
               </Button>
             </div>
           </div>
-        </div>
-        <div className="container mx-auto px-4 md:px-6 py-4 md:py-8">
-          {children}
+        </header>
+        
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-auto">
+          <div className="container mx-auto px-4 md:px-6 py-4 md:py-8">
+            {children}
+          </div>
         </div>
       </main>
     </div>
