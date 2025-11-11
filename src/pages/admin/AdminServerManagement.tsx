@@ -285,6 +285,19 @@ export const AdminServerManagement = () => {
     return (server.current_load / server.max_capacity) * 100;
   };
 
+  const getResponseTimeColor = (responseTime: number) => {
+    if (responseTime === 0) return "text-muted-foreground";
+    if (responseTime < 100) return "text-green-500";
+    if (responseTime < 300) return "text-yellow-500";
+    if (responseTime < 500) return "text-orange-500";
+    return "text-red-500";
+  };
+
+  const getResponseTimeText = (responseTime: number) => {
+    if (responseTime === 0) return "N/A";
+    return `${responseTime}ms`;
+  };
+
   if (loading) {
     return (
       <AdminLayout>
@@ -522,9 +535,11 @@ export const AdminServerManagement = () => {
                     <Badge variant="outline">{server.priority}</Badge>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Zap className="w-4 h-4 text-muted-foreground" />
+                    <Zap className={`w-4 h-4 ${getResponseTimeColor(server.response_time)}`} />
                     <span className="text-muted-foreground">Response:</span>
-                    <span className="font-medium">{server.response_time}ms</span>
+                    <span className={`font-medium ${getResponseTimeColor(server.response_time)}`}>
+                      {getResponseTimeText(server.response_time)}
+                    </span>
                   </div>
                 </div>
 
