@@ -18,7 +18,9 @@ import {
   ListChecks,
   BarChart,
   MessageSquare,
-  TrendingDown
+  TrendingDown,
+  Send,
+  Mail
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -56,6 +58,8 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
     { icon: CreditCard, label: "Subscriptions", path: "/admin/subscription-analytics" },
     { icon: TrendingDown, label: "Churn Analysis", path: "/admin/churn-analysis" },
     { icon: CreditCard, label: "Payments", path: "/admin/payment-analytics" },
+    { icon: Send, label: "Communication", path: "/admin/communication" },
+    { icon: Mail, label: "Templates", path: "/admin/notification-templates" },
   ];
 
   return (
