@@ -3,6 +3,8 @@ import { AdminLayout } from "@/components/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { QuickActionsPanel } from "@/components/admin/QuickActionsPanel";
+import { SystemHealthMonitor } from "@/components/admin/SystemHealthMonitor";
 import {
   Table,
   TableBody,
@@ -504,6 +506,12 @@ export const AdminDashboard = () => {
               </div>
             </CardContent>
           </Card>
+        </div>
+
+        {/* Quick Actions & System Health */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <QuickActionsPanel />
+          <SystemHealthMonitor />
         </div>
 
         {/* Charts Section */}

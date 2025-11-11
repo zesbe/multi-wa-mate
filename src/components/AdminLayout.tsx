@@ -2,6 +2,7 @@ import { ReactNode, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "./ui/button";
 import { ThemeToggle } from "./ThemeToggle";
+import { RealTimeAlerts } from "./admin/RealTimeAlerts";
 import {
   LayoutDashboard,
   Users,
@@ -12,7 +13,9 @@ import {
   X,
   Shield,
   Video,
-  FileText
+  FileText,
+  Activity,
+  ListChecks
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -40,6 +43,9 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
     { icon: Video, label: "Kelola Tutorial", path: "/admin/tutorials" },
     { icon: FileText, label: "Landing Content", path: "/admin/landing-content" },
     { icon: DollarSign, label: "Laporan Keuangan", path: "/admin/financial" },
+    { icon: Activity, label: "System Health", path: "/admin/system-health" },
+    { icon: ListChecks, label: "Audit Logs", path: "/admin/audit-logs" },
+    { icon: Users, label: "User Segments", path: "/admin/user-segments" },
   ];
 
   return (
@@ -122,6 +128,7 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
             </Button>
             <div className="flex-1" />
             <div className="flex items-center gap-2">
+              <RealTimeAlerts />
               <ThemeToggle />
               <Button
                 variant="outline"

@@ -35,6 +35,9 @@ import AdminPlans from "./pages/admin/AdminPlans";
 import AdminFinancial from "./pages/admin/AdminFinancial";
 import AdminTutorials from "./pages/admin/AdminTutorials";
 import AdminLandingContent from "./pages/admin/AdminLandingContent";
+import AdminAuditLogs from "./pages/admin/AdminAuditLogs";
+import AdminSystemHealth from "./pages/admin/AdminSystemHealth";
+import AdminUserSegments from "./pages/admin/AdminUserSegments";
 import Tutorial from "./pages/Tutorial";
 import Pricing from "./pages/Pricing";
 import Payment from "./pages/Payment";
@@ -92,6 +95,9 @@ const App = () => (
             <Route path="/admin/financial" element={<ProtectedRoute requiredRole="admin"><AdminFinancial /></ProtectedRoute>} />
             <Route path="/admin/tutorials" element={<ProtectedRoute requiredRole="admin"><AdminTutorials /></ProtectedRoute>} />
             <Route path="/admin/landing-content" element={<ProtectedRoute requiredRole="admin"><AdminLandingContent /></ProtectedRoute>} />
+            <Route path="/admin/audit-logs" element={<ProtectedRoute requiredRole="admin"><AdminAuditLogs /></ProtectedRoute>} />
+            <Route path="/admin/system-health" element={<ProtectedRoute requiredRole="admin"><AdminSystemHealth /></ProtectedRoute>} />
+            <Route path="/admin/user-segments" element={<ProtectedRoute requiredRole="admin"><AdminUserSegments /></ProtectedRoute>} />
             
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

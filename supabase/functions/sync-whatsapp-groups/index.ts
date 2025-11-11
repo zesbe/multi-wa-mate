@@ -100,7 +100,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
           'X-Device-ID': device_id,
         },
-        timeout: 10000, // 10 second timeout
+        signal: AbortSignal.timeout(10000), // 10 second timeout
       });
 
       console.log(`📡 Response status: ${response.status}`);

@@ -50,6 +50,45 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_logs: {
+        Row: {
+          action: string
+          admin_id: string
+          created_at: string
+          entity_id: string | null
+          entity_type: string
+          id: string
+          ip_address: string | null
+          new_values: Json | null
+          old_values: Json | null
+          user_agent: string | null
+        }
+        Insert: {
+          action: string
+          admin_id: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          ip_address?: string | null
+          new_values?: Json | null
+          old_values?: Json | null
+          user_agent?: string | null
+        }
+        Update: {
+          action?: string
+          admin_id?: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          ip_address?: string | null
+          new_values?: Json | null
+          old_values?: Json | null
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       auto_post_schedules: {
         Row: {
           created_at: string
@@ -1026,6 +1065,54 @@ export type Database = {
         }
         Relationships: []
       }
+      system_alerts: {
+        Row: {
+          alert_type: string
+          created_at: string
+          entity_id: string | null
+          entity_type: string | null
+          id: string
+          is_read: boolean | null
+          message: string
+          metadata: Json | null
+          read_by: string[] | null
+          resolved_at: string | null
+          resolved_by: string | null
+          severity: string
+          title: string
+        }
+        Insert: {
+          alert_type: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          is_read?: boolean | null
+          message: string
+          metadata?: Json | null
+          read_by?: string[] | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity: string
+          title: string
+        }
+        Update: {
+          alert_type?: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          is_read?: boolean | null
+          message?: string
+          metadata?: Json | null
+          read_by?: string[] | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: string
+          title?: string
+        }
+        Relationships: []
+      }
       tutorials: {
         Row: {
           category: string | null
@@ -1134,6 +1221,39 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
+        }
+        Relationships: []
+      }
+      user_segments: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          filters: Json
+          id: string
+          name: string
+          updated_at: string
+          user_count: number | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          filters?: Json
+          id?: string
+          name: string
+          updated_at?: string
+          user_count?: number | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          filters?: Json
+          id?: string
+          name?: string
+          updated_at?: string
+          user_count?: number | null
         }
         Relationships: []
       }
@@ -1435,6 +1555,16 @@ export type Database = {
       increment_product_downloads: {
         Args: { p_product_id: string }
         Returns: undefined
+      }
+      log_audit: {
+        Args: {
+          p_action: string
+          p_entity_id: string
+          p_entity_type: string
+          p_new_values?: Json
+          p_old_values?: Json
+        }
+        Returns: string
       }
       mark_conversation_as_read: {
         Args: { p_conversation_id: string }
