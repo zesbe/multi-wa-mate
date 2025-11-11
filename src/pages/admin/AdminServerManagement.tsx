@@ -113,12 +113,21 @@ export const AdminServerManagement = () => {
         toast.success("Server berhasil diupdate");
       } else {
         // Create new server
-        const { error } = await supabase
+        const { data: newServer, error } = await supabase
           .from("backend_servers")
-          .insert([formData]);
+          .insert([formData])
+          .select()
+          .single();
 
         if (error) throw error;
         toast.success("Server berhasil ditambahkan");
+        
+        // Auto health check untuk server baru
+        if (newServer) {
+          setTimeout(() => {
+            performHealthCheck(newServer);
+          }, 1000);
+        }
       }
 
       setDialogOpen(false);
@@ -127,6 +136,59 @@ export const AdminServerManagement = () => {
     } catch (error: any) {
       console.error("Error saving server:", error);
       toast.error(error.message || "Gagal menyimpan server");
+    }
+  };
+
+  const performHealthCheck = async (server: BackendServer) => {
+    try {
+      const startTime = Date.now();
+      
+      const response = await fetch(`${server.server_url}/health`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        signal: AbortSignal.timeout(5000)
+      });
+
+      const responseTime = Date.now() - startTime;
+      const isHealthy = response.ok;
+
+      await supabase
+        .from("backend_servers")
+        .update({
+          is_healthy: isHealthy,
+          response_time: responseTime,
+          last_health_check: new Date().toISOString(),
+          health_check_failures: isHealthy ? 0 : server.health_check_failures + 1,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", server.id);
+
+      await supabase.from("server_logs").insert([{
+        server_id: server.id,
+        log_type: isHealthy ? "info" : "error",
+        message: isHealthy ? "Health check passed" : "Health check failed",
+        details: {
+          response_time: responseTime,
+          status_code: response.status
+        }
+      }]);
+
+      toast.success(isHealthy ? `Server sehat ✓ (${responseTime}ms)` : "Server bermasalah ✗");
+      loadServers();
+    } catch (error: any) {
+      await supabase
+        .from("backend_servers")
+        .update({
+          is_healthy: false,
+          last_health_check: new Date().toISOString(),
+          health_check_failures: server.health_check_failures + 1,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", server.id);
+
+      loadServers();
     }
   };
 
@@ -197,68 +259,9 @@ export const AdminServerManagement = () => {
   };
 
   const handleHealthCheck = async (server: BackendServer) => {
-    try {
-      setRefreshing(true);
-      const startTime = Date.now();
-      
-      // Check health endpoint
-      const response = await fetch(`${server.server_url}/health`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        signal: AbortSignal.timeout(5000)
-      });
-
-      const responseTime = Date.now() - startTime;
-      const isHealthy = response.ok;
-
-      // Update server status
-      const { error } = await supabase
-        .from("backend_servers")
-        .update({
-          is_healthy: isHealthy,
-          response_time: responseTime,
-          last_health_check: new Date().toISOString(),
-          health_check_failures: isHealthy ? 0 : server.health_check_failures + 1,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", server.id);
-
-      if (error) throw error;
-
-      // Log the check
-      await supabase.from("server_logs").insert([{
-        server_id: server.id,
-        log_type: isHealthy ? "info" : "error",
-        message: isHealthy ? "Health check passed" : "Health check failed",
-        details: {
-          response_time: responseTime,
-          status_code: response.status
-        }
-      }]);
-
-      toast.success(isHealthy ? "Server sehat ✓" : "Server bermasalah ✗");
-      loadServers();
-    } catch (error: any) {
-      console.error("Error checking health:", error);
-      
-      // Mark as unhealthy on error
-      await supabase
-        .from("backend_servers")
-        .update({
-          is_healthy: false,
-          last_health_check: new Date().toISOString(),
-          health_check_failures: server.health_check_failures + 1,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", server.id);
-
-      toast.error("Gagal memeriksa kesehatan server");
-      loadServers();
-    } finally {
-      setRefreshing(false);
-    }
+    setRefreshing(true);
+    await performHealthCheck(server);
+    setRefreshing(false);
   };
 
   const getStatusIcon = (server: BackendServer) => {
@@ -294,7 +297,6 @@ export const AdminServerManagement = () => {
   };
 
   const getResponseTimeText = (responseTime: number) => {
-    if (responseTime === 0) return "N/A";
     return `${responseTime}ms`;
   };
 
