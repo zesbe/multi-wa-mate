@@ -42,6 +42,14 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
     }
   }, [user]);
 
+  // Scroll to active item in sidebar
+  useEffect(() => {
+    const activeButton = document.querySelector('.sidebar-nav-active');
+    if (activeButton && sidebarOpen) {
+      activeButton.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [location.pathname, sidebarOpen]);
+
   const menuItems = [
     { icon: LayoutDashboard, label: "Dasbor", path: "/admin/dashboard" },
     { icon: Smartphone, label: "Perangkat Saya", path: "/admin/devices" },
@@ -95,20 +103,25 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
           </div>
           
           <nav className="flex-1 overflow-y-auto p-4 space-y-2">
-            {menuItems.map((item) => (
-              <Button
-                key={item.path}
-                variant="ghost"
-                className="w-full justify-start"
-                onClick={() => {
-                  navigate(item.path);
-                  setSidebarOpen(false);
-                }}
-              >
-                <item.icon className="w-5 h-5 mr-3" />
-                {item.label}
-              </Button>
-            ))}
+            {menuItems.map((item) => {
+              const isActive = location.pathname === item.path;
+              return (
+                <Button
+                  key={item.path}
+                  variant="ghost"
+                  className={`w-full justify-start ${
+                    isActive ? 'sidebar-nav-active bg-primary/10 text-primary' : ''
+                  }`}
+                  onClick={() => {
+                    navigate(item.path);
+                    setSidebarOpen(false);
+                  }}
+                >
+                  <item.icon className="w-5 h-5 mr-3" />
+                  {item.label}
+                </Button>
+              );
+            })}
           </nav>
 
           {/* Admin Info */}
