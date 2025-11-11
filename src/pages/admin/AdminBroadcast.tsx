@@ -546,7 +546,8 @@ export const AdminBroadcast = () => {
             </div>
 
             {/* Contact List */}
-            <div className="border rounded-lg overflow-hidden">
+            {/* Desktop Table View */}
+            <div className="hidden lg:block border rounded-lg overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -597,6 +598,67 @@ export const AdminBroadcast = () => {
                   )}
                 </TableBody>
               </Table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="lg:hidden space-y-3">
+              {filteredContacts.length === 0 ? (
+                <div className="text-center text-muted-foreground py-8 border rounded-lg">
+                  No contacts found
+                </div>
+              ) : (
+                <>
+                  {/* Select All Card */}
+                  <Card className="p-4 bg-muted/30">
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        checked={selectedContacts.length === filteredContacts.length && filteredContacts.length > 0}
+                        onCheckedChange={handleSelectAll}
+                      />
+                      <span className="text-sm font-medium">
+                        {selectedContacts.length === filteredContacts.length && filteredContacts.length > 0
+                          ? "Deselect All"
+                          : "Select All"}
+                      </span>
+                      <Badge variant="secondary" className="ml-auto">
+                        {selectedContacts.length} / {filteredContacts.length}
+                      </Badge>
+                    </div>
+                  </Card>
+
+                  {/* Contact Cards */}
+                  {filteredContacts.map(contact => (
+                    <Card key={contact.id} className="overflow-hidden">
+                      <CardContent className="p-4">
+                        <div className="flex items-start gap-3">
+                          <Checkbox
+                            checked={selectedContacts.includes(contact.id)}
+                            onCheckedChange={() => handleContactToggle(contact.id)}
+                            className="mt-1"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-foreground mb-1 truncate">
+                              {contact.name || "Unknown"}
+                            </p>
+                            <p className="font-mono text-sm text-muted-foreground mb-2">
+                              {contact.phone_number}
+                            </p>
+                            {contact.tags && contact.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {contact.tags.map(tag => (
+                                  <Badge key={tag} variant="secondary" className="text-xs">
+                                    {tag}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
