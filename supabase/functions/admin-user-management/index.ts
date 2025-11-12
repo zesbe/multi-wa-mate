@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -123,11 +124,28 @@ serve(async (req) => {
       }
 
       case "update": {
-        const { user_id, full_name, email, role } = payload as UpdateUserRequest;
+        // Validate input with Zod
+        const updateUserSchema = z.object({
+          user_id: z.string().uuid({ message: "Invalid user ID format" }),
+          email: z.string().email({ message: "Invalid email format" }).max(255, { message: "Email must be less than 255 characters" }).optional(),
+          full_name: z.string().trim().min(1, { message: "Name cannot be empty" }).max(100, { message: "Name must be less than 100 characters" }).optional(),
+          role: z.enum(["admin", "user"], { message: "Role must be either 'admin' or 'user'" }).optional(),
+        });
 
-        if (!user_id) {
-          throw new Error("Missing required field: user_id");
+        let validatedData: UpdateUserRequest;
+        try {
+          validatedData = updateUserSchema.parse(payload);
+        } catch (err) {
+          if (err instanceof z.ZodError) {
+            return new Response(
+              JSON.stringify({ error: "Validation failed", details: err.errors }),
+              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+          throw err;
         }
+
+        const { user_id, full_name, email, role } = validatedData;
 
         // Update auth email if provided
         if (email) {
