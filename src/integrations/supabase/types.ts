@@ -173,7 +173,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
-          id?: string
+          id: string
           is_active?: boolean | null
           keyword: string
           reply: string
@@ -1036,7 +1036,7 @@ export type Database = {
           created_at?: string | null
           direction?: string | null
           from_number: string
-          id?: string
+          id: string
           is_read?: boolean | null
           message_id: string
           session_id: string
@@ -1372,7 +1372,7 @@ export type Database = {
           auto_reply_enabled?: boolean | null
           created_at?: string | null
           device_name?: string | null
-          id?: string
+          id: string
           last_active?: string | null
           pairing_code?: string | null
           phone_number?: string | null
@@ -1646,7 +1646,7 @@ export type Database = {
         Insert: {
           created_at?: string | null
           email: string
-          id?: string
+          id: string
           name: string
           password: string
           role?: string | null

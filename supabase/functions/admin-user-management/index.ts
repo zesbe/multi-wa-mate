@@ -129,7 +129,7 @@ serve(async (req) => {
           user_id: z.string().uuid({ message: "Invalid user ID format" }),
           email: z.string().email({ message: "Invalid email format" }).max(255, { message: "Email must be less than 255 characters" }).optional(),
           full_name: z.string().trim().min(1, { message: "Name cannot be empty" }).max(100, { message: "Name must be less than 100 characters" }).optional(),
-          role: z.enum(["admin", "user"], { message: "Role must be either 'admin' or 'user'" }).optional(),
+          role: z.enum(["admin", "user"], { invalid_type_error: "Role must be either 'admin' or 'user'" }).optional(),
         });
 
         let validatedData: UpdateUserRequest;
