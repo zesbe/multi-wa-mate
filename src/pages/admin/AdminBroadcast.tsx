@@ -20,6 +20,9 @@ interface Contact {
   phone_number: string;
   name: string | null;
   tags: string[];
+  user_id: string;
+  user_email?: string;
+  user_name?: string;
 }
 
 interface Device {
@@ -100,14 +103,36 @@ export const AdminBroadcast = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // Admin can see all contacts from all users
       const { data, error } = await supabase
         .from("contacts")
-        .select("id, phone_number, name, tags")
-        .eq("user_id", user.id)
+        .select(`
+          id,
+          phone_number,
+          name,
+          tags,
+          user_id,
+          profiles:user_id (
+            email,
+            full_name
+          )
+        `)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setContacts(data || []);
+
+      // Transform data to flatten profiles
+      const transformedData = data?.map((contact: any) => ({
+        id: contact.id,
+        phone_number: contact.phone_number,
+        name: contact.name,
+        tags: contact.tags || [],
+        user_id: contact.user_id,
+        user_email: contact.profiles?.email,
+        user_name: contact.profiles?.full_name
+      })) || [];
+
+      setContacts(transformedData);
     } catch (error: any) {
       console.error("Error fetching contacts:", error);
       toast.error("Failed to load contacts");
@@ -137,15 +162,15 @@ export const AdminBroadcast = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // Admin can see all broadcasts from all users
       const { data, error } = await supabase
         .from("broadcasts")
         .select("id, name, sent_count, failed_count, status, created_at, target_contacts")
-        .eq("user_id", user.id)
         .order("created_at", { ascending: false })
-        .limit(10);
+        .limit(20); // Increased limit for admin view
 
       if (error) throw error;
-      
+
       const history: BroadcastHistory[] = data?.map(b => ({
         id: b.id,
         name: b.name,
@@ -392,7 +417,7 @@ export const AdminBroadcast = () => {
             Admin Broadcast
           </h1>
           <p className="text-muted-foreground mt-2">
-            Broadcast messages ke customer WhatsApp secara otomatis
+            Send broadcast messages to all users' contacts across the platform
           </p>
         </div>
 
@@ -408,7 +433,7 @@ export const AdminBroadcast = () => {
             <CardContent>
               <div className="text-2xl font-bold">{contacts.length}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                {contacts.filter(c => c.tags?.includes("customer")).length} auto-synced customers
+                From all users across platform
               </p>
             </CardContent>
           </Card>
@@ -457,7 +482,7 @@ export const AdminBroadcast = () => {
         <Card>
           <CardHeader>
             <CardTitle>Create Broadcast</CardTitle>
-            <CardDescription>Send messages to multiple customers at once</CardDescription>
+            <CardDescription>Send messages to selected contacts via cloud service</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -635,13 +660,14 @@ export const AdminBroadcast = () => {
                     </TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Phone</TableHead>
+                    <TableHead>Owner</TableHead>
                     <TableHead>Tags</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredContacts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground">
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
                         No contacts found
                       </TableCell>
                     </TableRow>
@@ -659,6 +685,11 @@ export const AdminBroadcast = () => {
                         </TableCell>
                         <TableCell className="font-mono text-sm">
                           {contact.phone_number}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          <div className="max-w-[150px] truncate">
+                            {contact.user_name || contact.user_email || contact.user_id.substring(0, 8)}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
@@ -716,8 +747,12 @@ export const AdminBroadcast = () => {
                             <p className="font-medium text-foreground mb-1 truncate">
                               {contact.name || "Unknown"}
                             </p>
-                            <p className="font-mono text-sm text-muted-foreground mb-2">
+                            <p className="font-mono text-sm text-muted-foreground mb-1">
                               {contact.phone_number}
+                            </p>
+                            <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                              <Users className="w-3 h-3" />
+                              {contact.user_name || contact.user_email || contact.user_id.substring(0, 8)}
                             </p>
                             {contact.tags && contact.tags.length > 0 && (
                               <div className="flex flex-wrap gap-1">
@@ -743,7 +778,7 @@ export const AdminBroadcast = () => {
         <Card>
           <CardHeader>
             <CardTitle>Recent Broadcasts</CardTitle>
-            <CardDescription>Last 10 broadcast campaigns</CardDescription>
+            <CardDescription>Last 20 broadcast campaigns from all users</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
