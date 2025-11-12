@@ -31,13 +31,15 @@ export interface Device {
   pairing_code: string | null;
   connection_method: ConnectionMethod;
   phone_for_pairing: string | null;
-  api_key: string;
-  session_data: SessionData | null;
+  api_key: string | null;
+  session_data: unknown | null; // jsonb in database
   last_connected_at: string | null;
   created_at: string;
   updated_at: string;
   server_id: string | null;
-  error_message: string | null;
+  webhook_url: string | null;
+  assigned_server_id: string | null;
+  is_multidevice: boolean;
 }
 
 export interface SessionData {
@@ -55,12 +57,19 @@ export interface Contact {
   id: string;
   user_id: string;
   phone_number: string;
-  name: string;
-  type: ContactType;
-  group_id: string | null;
+  name: string | null;
+  device_id: string | null;
+  is_group: boolean;
+  group_members: unknown | null;
   var1: string | null;
   var2: string | null;
   var3: string | null;
+  tags: string[] | null;
+  notes: string | null;
+  birthday: string | null;
+  contact_count: number;
+  last_contacted_at: string | null;
+  reminders: unknown | null;
   created_at: string;
   updated_at: string;
 }
@@ -72,7 +81,7 @@ export interface Broadcast {
   name: string;
   message: string;
   media_url: string | null;
-  target_contacts: string[] | Contact[];
+  target_contacts: unknown; // jsonb in database
   status: BroadcastStatus;
   sent_count: number;
   failed_count: number;
@@ -98,7 +107,7 @@ export interface AutoPost {
   name: string;
   message: string;
   media_url: string | null;
-  target_contacts: string[] | Contact[];
+  target_contacts: unknown; // jsonb in database
   schedule_time: string;
   schedule_frequency: ScheduleFrequency;
   schedule_days: number[];
@@ -179,11 +188,13 @@ export interface CreateBroadcastDTO {
 export interface CreateContactDTO {
   phone_number: string;
   name: string;
-  type: ContactType;
-  group_id?: string;
+  device_id?: string;
+  is_group?: boolean;
   var1?: string;
   var2?: string;
   var3?: string;
+  tags?: string[];
+  notes?: string;
 }
 
 export interface CreateAutoPostDTO {

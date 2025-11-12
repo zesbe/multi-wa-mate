@@ -50,9 +50,9 @@ export class ContactService {
   }
 
   /**
-   * Get contacts by type
+   * Get contacts by group status
    */
-  static async getByType(type: ContactType): Promise<Contact[]> {
+  static async getByGroupStatus(isGroup: boolean): Promise<Contact[]> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new ContactServiceError('User not authenticated');
 
@@ -60,7 +60,7 @@ export class ContactService {
       .from('contacts')
       .select('*')
       .eq('user_id', user.id)
-      .eq('type', type)
+      .eq('is_group', isGroup)
       .order('name', { ascending: true });
 
     if (error) throw new ContactServiceError(error.message, error.code);
@@ -80,11 +80,13 @@ export class ContactService {
         user_id: user.id,
         phone_number: contact.phone_number,
         name: contact.name,
-        type: contact.type,
-        group_id: contact.group_id || null,
+        device_id: contact.device_id || null,
+        is_group: contact.is_group || false,
         var1: contact.var1 || null,
         var2: contact.var2 || null,
-        var3: contact.var3 || null
+        var3: contact.var3 || null,
+        tags: contact.tags || null,
+        notes: contact.notes || null
       })
       .select()
       .single();
@@ -103,7 +105,7 @@ export class ContactService {
     const { data, error } = await supabase
       .from('contacts')
       .update({
-        ...updates,
+        ...updates as any, // Cast to any to handle unknown types
         updated_at: new Date().toISOString()
       })
       .eq('id', contactId)
@@ -142,11 +144,13 @@ export class ContactService {
       user_id: user.id,
       phone_number: contact.phone_number,
       name: contact.name,
-      type: contact.type,
-      group_id: contact.group_id || null,
+      device_id: contact.device_id || null,
+      is_group: contact.is_group || false,
       var1: contact.var1 || null,
       var2: contact.var2 || null,
-      var3: contact.var3 || null
+      var3: contact.var3 || null,
+      tags: contact.tags || null,
+      notes: contact.notes || null
     }));
 
     const { data, error } = await supabase

@@ -104,7 +104,7 @@ export class BroadcastService {
     const { data, error } = await supabase
       .from('broadcasts')
       .update({
-        ...updates,
+        ...updates as any, // Cast to any to handle unknown types
         updated_at: new Date().toISOString()
       })
       .eq('id', broadcastId)
