@@ -1,7 +1,7 @@
 project_id = "ierdfxgeectqoekugyvb"
 
 [functions.whatsapp-baileys]
-verify_jwt = false
+verify_jwt = true
 
 [functions.pakasir-webhook]
 verify_jwt = false

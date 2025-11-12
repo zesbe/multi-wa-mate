@@ -28,12 +28,45 @@ serve(async (req) => {
     return new Response("Device ID required", { status: 400 });
   }
 
-  const { socket, response } = Deno.upgradeWebSocket(req);
-
+  // Initialize Supabase client
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   );
+
+  // Verify JWT token and authenticate user
+  const authHeader = headers.get('authorization');
+  if (!authHeader) {
+    console.warn(`WebSocket connection attempt without authorization header for device ${deviceId}`);
+    return new Response('Unauthorized: Missing authentication token', { status: 401 });
+  }
+
+  const token = authHeader.replace('Bearer ', '');
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  
+  if (authError || !user) {
+    console.warn(`WebSocket authentication failed for device ${deviceId}:`, authError?.message);
+    return new Response('Unauthorized: Invalid authentication token', { status: 401 });
+  }
+
+  console.log(`User ${user.id} attempting to connect to device ${deviceId}`);
+
+  // Verify device ownership
+  const { data: device, error: deviceError } = await supabase
+    .from('devices')
+    .select('user_id, device_name')
+    .eq('id', deviceId)
+    .eq('user_id', user.id)
+    .single();
+
+  if (deviceError || !device) {
+    console.warn(`Device ownership verification failed for user ${user.id}, device ${deviceId}`);
+    return new Response('Forbidden: Device not found or access denied', { status: 403 });
+  }
+
+  console.log(`Access granted: User ${user.id} connected to device ${device.device_name} (${deviceId})`);
+
+  const { socket, response } = Deno.upgradeWebSocket(req);
 
   socket.onopen = async () => {
     console.log(`WebSocket opened for device: ${deviceId}`);
