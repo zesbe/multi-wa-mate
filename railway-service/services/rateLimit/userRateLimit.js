@@ -10,50 +10,41 @@ const { supabase } = require('../../config/supabase');
 /**
  * Rate limit configurations per feature
  *
- * ⚠️ IMPORTANT: These are DEFAULT values for STANDARD users.
- * Adjust these based on your business needs and WhatsApp limits.
+ * 🎯 BUSINESS MODEL: Plan-Based Limits (Like Fonnte.com)
  *
- * WhatsApp Official Limits (2025):
- * - ~1000 messages per day per device (unofficial, varies)
- * - Rate: ~20-30 messages per minute recommended
+ * Rate limits are controlled by USER'S SUBSCRIPTION PLAN, not hard-coded limits.
+ * This allows different pricing tiers with different quotas.
  *
- * 💡 TIPS:
- * - Set limits BELOW WhatsApp's to prevent bans
- * - Premium users get 3x these limits automatically
- * - Adjust based on monitoring data
+ * Default values below are UNLIMITED for testing/development.
+ * In production, limits are fetched from user's subscription plan.
+ *
+ * 💡 PRICING MODEL EXAMPLE (Fonnte-style):
+ * - Free Plan:     100 messages/day
+ * - Basic Plan:    1,000 messages/day  ($10/month)
+ * - Pro Plan:      10,000 messages/day ($50/month)
+ * - Business Plan: 100,000 messages/day ($200/month)
+ * - Enterprise:    UNLIMITED
+ *
+ * ⚠️ IMPORTANT:
+ * - Limits are stored in 'plans' table (features JSONB column)
+ * - Default: UNLIMITED (999999) - easy testing
+ * - To enable limits: Set plan limits in database
  */
 const RATE_LIMITS = {
-  // Broadcasts per user (campaigns)
-  BROADCAST: {
-    MAX_PER_HOUR: 50,        // 50 broadcast campaigns per hour (reasonable for business)
-    MAX_PER_DAY: 200,        // 200 campaigns per day (generous limit)
-    WINDOW_HOUR: 3600,       // 1 hour in seconds
-    WINDOW_DAY: 86400,       // 24 hours in seconds
+  // Default limits (UNLIMITED for easy testing)
+  // Override by checking user's subscription plan
+  DEFAULT: {
+    BROADCAST_PER_DAY: 999999,      // Unlimited by default
+    MESSAGE_PER_DAY: 999999,        // Unlimited by default
+    API_CALL_PER_HOUR: 999999,      // Unlimited by default
+    DEVICE_CONNECTION_PER_HOUR: 100, // Reasonable limit to prevent spam
   },
 
-  // Individual messages per user
-  // This is for ACTUAL messages sent, not campaigns
-  MESSAGE: {
-    MAX_PER_MINUTE: 100,     // 100 messages per minute (business-friendly)
-    MAX_PER_HOUR: 3000,      // 3000 messages per hour (enough for most businesses)
-    MAX_PER_DAY: 10000,      // 10k messages per day (per user, reasonable)
-    WINDOW_MINUTE: 60,
-    WINDOW_HOUR: 3600,
-    WINDOW_DAY: 86400,
-  },
-
-  // API calls per user (endpoint requests)
-  API_CALL: {
-    MAX_PER_MINUTE: 120,     // 120 API calls per minute (2 per second)
-    MAX_PER_HOUR: 5000,      // 5000 API calls per hour
-    WINDOW_MINUTE: 60,
-    WINDOW_HOUR: 3600,
-  },
-
-  // Device connections per user (reconnection attempts)
-  DEVICE_CONNECTION: {
-    MAX_PER_HOUR: 50,        // 50 connection attempts per hour (prevent spam reconnect)
-    WINDOW: 3600,
+  // Time windows in seconds
+  WINDOWS: {
+    MINUTE: 60,
+    HOUR: 3600,
+    DAY: 86400,
   },
 };
 
@@ -69,143 +60,201 @@ const RateLimitKey = {
 
 class UserRateLimitService {
   /**
-   * Check if user is within broadcast rate limit
+   * Get user's plan limits from subscription
+   * @param {string} userId - User ID
+   * @returns {Promise<Object>} Plan limits
+   */
+  async getUserPlanLimits(userId) {
+    try {
+      const { data: subscription } = await supabase
+        .from('subscriptions')
+        .select('plans(name, features)')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!subscription || !subscription.plans) {
+        // No active subscription - use default (unlimited)
+        return {
+          planName: 'Free (Unlimited)',
+          broadcastPerDay: RATE_LIMITS.DEFAULT.BROADCAST_PER_DAY,
+          messagePerDay: RATE_LIMITS.DEFAULT.MESSAGE_PER_DAY,
+          apiCallPerHour: RATE_LIMITS.DEFAULT.API_CALL_PER_HOUR,
+        };
+      }
+
+      const plan = subscription.plans;
+      const features = plan.features || {};
+
+      // Extract limits from plan features
+      // Expected format in plans.features (JSONB):
+      // {
+      //   "broadcastPerDay": 1000,
+      //   "messagePerDay": 10000,
+      //   "apiCallPerHour": 5000
+      // }
+      return {
+        planName: plan.name,
+        broadcastPerDay: features.broadcastPerDay || RATE_LIMITS.DEFAULT.BROADCAST_PER_DAY,
+        messagePerDay: features.messagePerDay || RATE_LIMITS.DEFAULT.MESSAGE_PER_DAY,
+        apiCallPerHour: features.apiCallPerHour || RATE_LIMITS.DEFAULT.API_CALL_PER_HOUR,
+      };
+    } catch (error) {
+      console.error('Error fetching user plan limits:', error);
+      // On error, return unlimited (fail open)
+      return {
+        planName: 'Error - Unlimited',
+        broadcastPerDay: RATE_LIMITS.DEFAULT.BROADCAST_PER_DAY,
+        messagePerDay: RATE_LIMITS.DEFAULT.MESSAGE_PER_DAY,
+        apiCallPerHour: RATE_LIMITS.DEFAULT.API_CALL_PER_HOUR,
+      };
+    }
+  }
+
+  /**
+   * Check if user is within broadcast rate limit (plan-based)
    * @param {string} userId - User ID
    * @returns {Promise<Object>} { allowed: boolean, remaining: number, resetAt: Date }
    */
   async checkBroadcastLimit(userId) {
-    const hourKey = RateLimitKey.broadcast(userId, 'hour');
-    const dayKey = RateLimitKey.broadcast(userId, 'day');
+    // Get user's plan limits
+    const planLimits = await this.getUserPlanLimits(userId);
+    const maxPerDay = planLimits.broadcastPerDay;
 
-    // Check hourly limit
-    const hourlyAllowed = await redisClient.checkRateLimit(
-      hourKey,
-      RATE_LIMITS.BROADCAST.MAX_PER_HOUR,
-      RATE_LIMITS.BROADCAST.WINDOW_HOUR
-    );
+    // If unlimited (999999), skip rate limit check
+    if (maxPerDay >= 999999) {
+      return {
+        allowed: true,
+        planName: planLimits.planName,
+        daily: {
+          current: 0,
+          max: 'Unlimited',
+          remaining: 'Unlimited',
+        },
+        message: 'Unlimited plan - no rate limit',
+      };
+    }
+
+    const dayKey = RateLimitKey.broadcast(userId, 'day');
 
     // Check daily limit
     const dailyAllowed = await redisClient.checkRateLimit(
       dayKey,
-      RATE_LIMITS.BROADCAST.MAX_PER_DAY,
-      RATE_LIMITS.BROADCAST.WINDOW_DAY
+      maxPerDay,
+      RATE_LIMITS.WINDOWS.DAY
     );
 
-    const hourCount = await redisClient.getRateLimitCount(hourKey);
     const dayCount = await redisClient.getRateLimitCount(dayKey);
 
-    const allowed = hourlyAllowed && dailyAllowed;
-
     return {
-      allowed,
-      hourly: {
-        current: hourCount,
-        max: RATE_LIMITS.BROADCAST.MAX_PER_HOUR,
-        remaining: Math.max(0, RATE_LIMITS.BROADCAST.MAX_PER_HOUR - hourCount),
-      },
+      allowed: dailyAllowed,
+      planName: planLimits.planName,
       daily: {
         current: dayCount,
-        max: RATE_LIMITS.BROADCAST.MAX_PER_DAY,
-        remaining: Math.max(0, RATE_LIMITS.BROADCAST.MAX_PER_DAY - dayCount),
+        max: maxPerDay,
+        remaining: Math.max(0, maxPerDay - dayCount),
       },
-      message: allowed ? 'Rate limit OK' : 'Rate limit exceeded - please wait before sending more broadcasts',
+      message: dailyAllowed
+        ? `Plan: ${planLimits.planName} - Rate limit OK`
+        : `Plan limit reached (${maxPerDay}/day) - Upgrade plan for more`,
     };
   }
 
   /**
-   * Check if user is within message rate limit
+   * Check if user is within message rate limit (plan-based)
    * @param {string} userId - User ID
    * @returns {Promise<Object>} Rate limit status
    */
   async checkMessageLimit(userId) {
-    const minuteKey = RateLimitKey.message(userId, 'minute');
-    const hourKey = RateLimitKey.message(userId, 'hour');
+    // Get user's plan limits
+    const planLimits = await this.getUserPlanLimits(userId);
+    const maxPerDay = planLimits.messagePerDay;
+
+    // If unlimited (999999), skip rate limit check
+    if (maxPerDay >= 999999) {
+      return {
+        allowed: true,
+        planName: planLimits.planName,
+        perDay: {
+          current: 0,
+          max: 'Unlimited',
+          remaining: 'Unlimited',
+        },
+        message: 'Unlimited plan - no rate limit',
+      };
+    }
+
     const dayKey = RateLimitKey.message(userId, 'day');
-
-    const minuteAllowed = await redisClient.checkRateLimit(
-      minuteKey,
-      RATE_LIMITS.MESSAGE.MAX_PER_MINUTE,
-      RATE_LIMITS.MESSAGE.WINDOW_MINUTE
-    );
-
-    const hourAllowed = await redisClient.checkRateLimit(
-      hourKey,
-      RATE_LIMITS.MESSAGE.MAX_PER_HOUR,
-      RATE_LIMITS.MESSAGE.WINDOW_HOUR
-    );
 
     const dayAllowed = await redisClient.checkRateLimit(
       dayKey,
-      RATE_LIMITS.MESSAGE.MAX_PER_DAY,
-      RATE_LIMITS.MESSAGE.WINDOW_DAY
+      maxPerDay,
+      RATE_LIMITS.WINDOWS.DAY
     );
 
-    const minuteCount = await redisClient.getRateLimitCount(minuteKey);
-    const hourCount = await redisClient.getRateLimitCount(hourKey);
     const dayCount = await redisClient.getRateLimitCount(dayKey);
 
-    const allowed = minuteAllowed && hourAllowed && dayAllowed;
-
     return {
-      allowed,
-      perMinute: {
-        current: minuteCount,
-        max: RATE_LIMITS.MESSAGE.MAX_PER_MINUTE,
-        remaining: Math.max(0, RATE_LIMITS.MESSAGE.MAX_PER_MINUTE - minuteCount),
-      },
-      perHour: {
-        current: hourCount,
-        max: RATE_LIMITS.MESSAGE.MAX_PER_HOUR,
-        remaining: Math.max(0, RATE_LIMITS.MESSAGE.MAX_PER_HOUR - hourCount),
-      },
+      allowed: dayAllowed,
+      planName: planLimits.planName,
       perDay: {
         current: dayCount,
-        max: RATE_LIMITS.MESSAGE.MAX_PER_DAY,
-        remaining: Math.max(0, RATE_LIMITS.MESSAGE.MAX_PER_DAY - dayCount),
+        max: maxPerDay,
+        remaining: Math.max(0, maxPerDay - dayCount),
       },
-      message: allowed ? 'Rate limit OK' : 'Rate limit exceeded - please slow down',
+      message: dayAllowed
+        ? `Plan: ${planLimits.planName} - Rate limit OK`
+        : `Daily message limit reached (${maxPerDay}/day) - Upgrade plan for more`,
     };
   }
 
   /**
-   * Check if user is within API call rate limit
+   * Check if user is within API call rate limit (plan-based)
    * @param {string} userId - User ID
    * @returns {Promise<Object>} Rate limit status
    */
   async checkApiLimit(userId) {
-    const minuteKey = RateLimitKey.apiCall(userId, 'minute');
-    const hourKey = RateLimitKey.apiCall(userId, 'hour');
+    // Get user's plan limits
+    const planLimits = await this.getUserPlanLimits(userId);
+    const maxPerHour = planLimits.apiCallPerHour;
 
-    const minuteAllowed = await redisClient.checkRateLimit(
-      minuteKey,
-      RATE_LIMITS.API_CALL.MAX_PER_MINUTE,
-      RATE_LIMITS.API_CALL.WINDOW_MINUTE
-    );
+    // If unlimited (999999), skip rate limit check
+    if (maxPerHour >= 999999) {
+      return {
+        allowed: true,
+        planName: planLimits.planName,
+        perHour: {
+          current: 0,
+          max: 'Unlimited',
+          remaining: 'Unlimited',
+        },
+        message: 'Unlimited plan - no API rate limit',
+      };
+    }
+
+    const hourKey = RateLimitKey.apiCall(userId, 'hour');
 
     const hourAllowed = await redisClient.checkRateLimit(
       hourKey,
-      RATE_LIMITS.API_CALL.MAX_PER_HOUR,
-      RATE_LIMITS.API_CALL.WINDOW_HOUR
+      maxPerHour,
+      RATE_LIMITS.WINDOWS.HOUR
     );
 
-    const minuteCount = await redisClient.getRateLimitCount(minuteKey);
     const hourCount = await redisClient.getRateLimitCount(hourKey);
 
-    const allowed = minuteAllowed && hourAllowed;
-
     return {
-      allowed,
-      perMinute: {
-        current: minuteCount,
-        max: RATE_LIMITS.API_CALL.MAX_PER_MINUTE,
-        remaining: Math.max(0, RATE_LIMITS.API_CALL.MAX_PER_MINUTE - minuteCount),
-      },
+      allowed: hourAllowed,
+      planName: planLimits.planName,
       perHour: {
         current: hourCount,
-        max: RATE_LIMITS.API_CALL.MAX_PER_HOUR,
-        remaining: Math.max(0, RATE_LIMITS.API_CALL.MAX_PER_HOUR - hourCount),
+        max: maxPerHour,
+        remaining: Math.max(0, maxPerHour - hourCount),
       },
-      message: allowed ? 'Rate limit OK' : 'API rate limit exceeded',
+      message: hourAllowed
+        ? `Plan: ${planLimits.planName} - API rate limit OK`
+        : `Hourly API limit reached (${maxPerHour}/hour) - Upgrade plan for more`,
     };
   }
 
@@ -217,10 +266,12 @@ class UserRateLimitService {
   async checkDeviceConnectionLimit(userId) {
     const key = RateLimitKey.deviceConnection(userId);
 
+    // Device connection has fixed limit (not plan-based)
+    // This prevents spam reconnection attempts
     return await redisClient.checkRateLimit(
       key,
-      RATE_LIMITS.DEVICE_CONNECTION.MAX_PER_HOUR,
-      RATE_LIMITS.DEVICE_CONNECTION.WINDOW
+      RATE_LIMITS.DEFAULT.DEVICE_CONNECTION_PER_HOUR,
+      RATE_LIMITS.WINDOWS.HOUR
     );
   }
 
@@ -230,7 +281,8 @@ class UserRateLimitService {
    * @returns {Promise<Object>} Complete rate limit status
    */
   async getUserRateLimitStatus(userId) {
-    const [broadcast, message, api] = await Promise.all([
+    const [planLimits, broadcast, message, api] = await Promise.all([
+      this.getUserPlanLimits(userId),
       this.checkBroadcastLimit(userId),
       this.checkMessageLimit(userId),
       this.checkApiLimit(userId),
@@ -238,6 +290,7 @@ class UserRateLimitService {
 
     return {
       userId,
+      plan: planLimits.planName,
       timestamp: new Date().toISOString(),
       limits: {
         broadcast,
@@ -245,6 +298,9 @@ class UserRateLimitService {
         api,
       },
       overallStatus: broadcast.allowed && message.allowed && api.allowed ? 'OK' : 'LIMITED',
+      upgradeMessage: !broadcast.allowed || !message.allowed || !api.allowed
+        ? 'Upgrade your plan for higher limits'
+        : null,
     };
   }
 
@@ -296,57 +352,28 @@ class UserRateLimitService {
 
   /**
    * Check if user has premium plan (bypasses some limits)
+   * @deprecated Use getUserPlanLimits() instead for plan-based limits
    * @param {string} userId - User ID
    * @returns {Promise<boolean>} True if premium user
    */
   async isPremiumUser(userId) {
-    const { data } = await supabase
-      .from('subscriptions')
-      .select('plans(name, features)')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .maybeSingle();
+    const planLimits = await this.getUserPlanLimits(userId);
 
-    if (!data || !data.plans) {
-      return false;
-    }
-
-    // Check if plan is premium/enterprise
-    const planName = data.plans.name?.toLowerCase() || '';
-    return planName.includes('premium') || planName.includes('enterprise') || planName.includes('pro');
+    // Consider unlimited plans as premium
+    return planLimits.messagePerDay >= 999999 ||
+           planLimits.planName.toLowerCase().includes('premium') ||
+           planLimits.planName.toLowerCase().includes('enterprise') ||
+           planLimits.planName.toLowerCase().includes('pro');
   }
 
   /**
    * Get adjusted rate limits based on user plan
+   * @deprecated Use getUserPlanLimits() instead
    * @param {string} userId - User ID
    * @returns {Promise<Object>} Adjusted rate limits
    */
   async getAdjustedLimits(userId) {
-    const isPremium = await this.isPremiumUser(userId);
-
-    if (isPremium) {
-      // Premium users get 3x limits
-      return {
-        BROADCAST: {
-          MAX_PER_HOUR: RATE_LIMITS.BROADCAST.MAX_PER_HOUR * 3,
-          MAX_PER_DAY: RATE_LIMITS.BROADCAST.MAX_PER_DAY * 3,
-        },
-        MESSAGE: {
-          MAX_PER_MINUTE: RATE_LIMITS.MESSAGE.MAX_PER_MINUTE * 3,
-          MAX_PER_HOUR: RATE_LIMITS.MESSAGE.MAX_PER_HOUR * 3,
-        },
-        API_CALL: {
-          MAX_PER_MINUTE: RATE_LIMITS.API_CALL.MAX_PER_MINUTE * 3,
-          MAX_PER_HOUR: RATE_LIMITS.API_CALL.MAX_PER_HOUR * 3,
-        },
-        tier: 'premium',
-      };
-    }
-
-    return {
-      ...RATE_LIMITS,
-      tier: 'standard',
-    };
+    return await this.getUserPlanLimits(userId);
   }
 }
 
