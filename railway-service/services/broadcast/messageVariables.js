@@ -1,4 +1,5 @@
 const { supabase } = require('../../config/supabase');
+const cacheService = require('../cache/cacheService');
 
 /**
  * Get WhatsApp profile name using multiple methods
@@ -46,19 +47,32 @@ async function getWhatsAppName(sock, phoneNumber) {
 }
 
 /**
- * Get contact info from database
+ * Get contact info from database (with caching)
  * @param {string} phoneNumber - Phone number
  * @param {string} userId - User ID
  * @param {Object} fallbackContact - Fallback contact object
  * @returns {Promise<Object>} Contact info
  */
 async function getContactInfo(phoneNumber, userId, fallbackContact = {}) {
-  const { data: contactData } = await supabase
-    .from('contacts')
-    .select('name, var1, var2, var3')
-    .eq('phone_number', phoneNumber)
-    .eq('user_id', userId)
-    .maybeSingle();
+  // Try to get from cache first
+  let contactData = await cacheService.getContactInfo(userId, phoneNumber);
+
+  // If not in cache, fetch from database
+  if (!contactData) {
+    const { data } = await supabase
+      .from('contacts')
+      .select('name, var1, var2, var3')
+      .eq('phone_number', phoneNumber)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    contactData = data;
+
+    // Cache the result if found
+    if (data) {
+      await cacheService.getContactInfo(userId, phoneNumber); // This will cache it
+    }
+  }
 
   return contactData || {
     name: (typeof fallbackContact === 'object' ? fallbackContact.name : null) || phoneNumber

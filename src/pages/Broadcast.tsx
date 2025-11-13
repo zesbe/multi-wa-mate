@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Send, Clock, CheckCircle2, XCircle, X, Users, RefreshCw, Copy, FileText, Download, Eye, Trash2, MoreVertical, Loader2, PlayCircle, Upload, Image as ImageIcon, BarChart3, Shield, Zap } from "lucide-react";
+import { SecureInput, SecureTextarea } from "@/components/secure"; // 🔒 XSS Protection
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -623,11 +624,12 @@ export const Broadcast = () => {
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="name">Nama Campaign</Label>
-                      <Input
+                      <SecureInput
                         id="name"
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         placeholder="Promo Spesial Hari Ini"
+                        maxLength={200}
                         required
                       />
                     </div>
@@ -659,12 +661,13 @@ export const Broadcast = () => {
 
                     <div className="space-y-2">
                       <Label htmlFor="message">Pesan</Label>
-                      <Textarea
+                      <SecureTextarea
                         id="message"
                         value={formData.message}
                         onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                         placeholder="Tulis pesan broadcast Anda di sini..."
                         rows={6}
+                        maxLength={4096}
                         required
                       />
                     </div>
@@ -683,32 +686,35 @@ export const Broadcast = () => {
                       <div className="grid grid-cols-1 gap-3">
                         <div className="space-y-1">
                           <Label htmlFor="var1" className="text-xs">{'{var1}'}</Label>
-                          <Input
+                          <SecureInput
                             id="var1"
                             value={formData.var1}
                             onChange={(e) => setFormData({ ...formData, var1: e.target.value })}
                             placeholder="Contoh: PROMO2024"
                             className="h-9"
+                            maxLength={100}
                           />
                         </div>
                         <div className="space-y-1">
                           <Label htmlFor="var2" className="text-xs">{'{var2}'}</Label>
-                          <Input
+                          <SecureInput
                             id="var2"
                             value={formData.var2}
                             onChange={(e) => setFormData({ ...formData, var2: e.target.value })}
                             placeholder="Contoh: Premium Package"
                             className="h-9"
+                            maxLength={100}
                           />
                         </div>
                         <div className="space-y-1">
                           <Label htmlFor="var3" className="text-xs">{'{var3}'}</Label>
-                          <Input
+                          <SecureInput
                             id="var3"
                             value={formData.var3}
                             onChange={(e) => setFormData({ ...formData, var3: e.target.value })}
                             placeholder="Contoh: 31 Des 2024"
                             className="h-9"
+                            maxLength={100}
                           />
                         </div>
                       </div>
@@ -858,11 +864,12 @@ export const Broadcast = () => {
 
                         <TabsContent value="manual" className="space-y-3">
                           <div className="flex gap-2">
-                            <Input
+                            <SecureInput
                               placeholder="628123456789"
                               value={currentNumber}
                               onChange={(e) => setCurrentNumber(e.target.value)}
                               onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), addManualNumber())}
+                              maxLength={20}
                             />
                             <Button type="button" onClick={addManualNumber} size="sm">
                               <Plus className="w-4 h-4" />

@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { VitePWA } from 'vite-plugin-pwa';
+import { dynamicCSP } from './src/plugins/vite-plugin-csp';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -40,7 +41,8 @@ export default defineConfig(({ mode }) => ({
   },
   
   plugins: [
-    react(), 
+    react(),
+    dynamicCSP(), // 🔒 Dynamic CSP: strict in production, relaxed in dev
     mode === "development" && componentTagger(),
     VitePWA({
       registerType: 'autoUpdate',

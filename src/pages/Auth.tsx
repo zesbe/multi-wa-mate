@@ -5,8 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import {
+  passwordSchema,
+  calculatePasswordStrength,
+  getPasswordStrengthLabel,
+  PASSWORD_REQUIREMENTS
+} from "@/utils/passwordValidation";
+import { sanitizeText } from "@/utils/inputValidation";
 
 export const Auth = () => {
   const navigate = useNavigate();
@@ -16,6 +23,8 @@ export const Auth = () => {
   const [fullName, setFullName] = useState("");
   const [whatsappNumber, setWhatsappNumber] = useState("");
   const [loading, setLoading] = useState(false);
+  const [passwordStrength, setPasswordStrength] = useState(0);
+  const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
 
   useEffect(() => {
     // Check if user is already logged in
@@ -60,6 +69,25 @@ export const Auth = () => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
+  // 🔒 SECURITY: Validate password strength on change (for signup)
+  useEffect(() => {
+    if (!isLogin && password) {
+      const strength = calculatePasswordStrength(password);
+      setPasswordStrength(strength);
+
+      // Validate with Zod schema
+      const validation = passwordSchema.safeParse(password);
+      if (!validation.success) {
+        const errors = validation.error.errors.map(err => err.message);
+        setPasswordErrors(errors);
+      } else {
+        setPasswordErrors([]);
+      }
+    } else {
+      setPasswordErrors([]);
+    }
+  }, [password, isLogin]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -75,13 +103,20 @@ export const Auth = () => {
           if (error.message.includes("Invalid login credentials")) {
             toast.error("Email atau password salah");
           } else {
-            toast.error(error.message);
+            toast.error("Login gagal. Silakan coba lagi.");
           }
           return;
         }
 
         toast.success("Berhasil login!");
       } else {
+        // 🔒 SECURITY: Validate password strength for signup
+        const passwordValidation = passwordSchema.safeParse(password);
+        if (!passwordValidation.success) {
+          toast.error("Password tidak memenuhi syarat keamanan");
+          return;
+        }
+
         // Validasi nomor WhatsApp
         const cleanedNumber = whatsappNumber.replace(/\D/g, '');
         if (!cleanedNumber.startsWith('62')) {
@@ -93,12 +128,15 @@ export const Auth = () => {
           return;
         }
 
+        // 🔒 SECURITY: Sanitize user inputs before storing
+        const sanitizedFullName = sanitizeText(fullName);
+
         const { error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             data: {
-              full_name: fullName,
+              full_name: sanitizedFullName,
               whatsapp_number: cleanedNumber,
             },
             emailRedirectTo: `${window.location.origin}/dashboard`,
@@ -109,7 +147,7 @@ export const Auth = () => {
           if (error.message.includes("already registered")) {
             toast.error("Email sudah terdaftar");
           } else {
-            toast.error(error.message);
+            toast.error("Pendaftaran gagal. Silakan coba lagi.");
           }
           return;
         }
@@ -118,7 +156,8 @@ export const Auth = () => {
         setIsLogin(true);
       }
     } catch (error: any) {
-      toast.error(error.message);
+      console.error('Auth error:', error);
+      toast.error("Terjadi kesalahan. Silakan coba lagi.");
     } finally {
       setLoading(false);
     }
@@ -205,11 +244,53 @@ export const Auth = () => {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
-                minLength={6}
+                minLength={isLogin ? 6 : 12}
               />
-              {!isLogin && (
+              {!isLogin && password && (
+                <div className="space-y-2 mt-2">
+                  {/* Password Strength Indicator */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Kekuatan Password</span>
+                      <span className={getPasswordStrengthLabel(passwordStrength).color}>
+                        {getPasswordStrengthLabel(passwordStrength).label}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-300 ${getPasswordStrengthLabel(passwordStrength).bgColor}`}
+                        style={{ width: `${passwordStrength}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Password Requirements Checklist */}
+                  <div className="rounded-lg bg-muted/50 p-3 space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">
+                      Syarat Password:
+                    </p>
+                    {PASSWORD_REQUIREMENTS.map((req, index) => {
+                      const isMet = passwordErrors.length === 0 ||
+                        !passwordErrors.some(err => err.toLowerCase().includes(req.split(' ')[0].toLowerCase()));
+                      return (
+                        <div key={index} className="flex items-center gap-2 text-xs">
+                          {isMet ? (
+                            <CheckCircle2 className="w-3 h-3 text-green-600" />
+                          ) : (
+                            <XCircle className="w-3 h-3 text-gray-400" />
+                          )}
+                          <span className={isMet ? "text-green-600" : "text-muted-foreground"}>
+                            {req}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {!isLogin && !password && (
                 <p className="text-xs text-muted-foreground">
-                  Minimal 6 karakter
+                  Minimal 12 karakter dengan kombinasi huruf besar, huruf kecil, angka, dan simbol
                 </p>
               )}
             </div>
