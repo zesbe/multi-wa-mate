@@ -6,6 +6,14 @@
 
 const redisClient = require('../../redis-client');
 const { supabase } = require('../../config/supabase');
+const {
+  validateUserId,
+  validateTemplateId,
+  sanitizeRedisKey,
+  isValidPhoneNumber,
+  sanitizeErrorMessage,
+  hashForLogging,
+} = require('../../utils/inputValidation');
 
 /**
  * Cache TTL configurations (in seconds)
@@ -19,15 +27,15 @@ const CACHE_TTL = {
 };
 
 /**
- * Cache key generators
+ * Cache key generators (with sanitization)
  */
 const CacheKey = {
-  template: (userId, templateId) => `template:${userId}:${templateId}`,
-  allTemplates: (userId) => `templates:${userId}:all`,
-  userSettings: (userId) => `settings:${userId}`,
-  contactList: (userId) => `contacts:${userId}:list`,
-  contactInfo: (userId, phoneNumber) => `contact:${userId}:${phoneNumber}`,
-  userSubscription: (userId) => `subscription:${userId}`,
+  template: (userId, templateId) => `template:${sanitizeRedisKey(userId)}:${sanitizeRedisKey(templateId)}`,
+  allTemplates: (userId) => `templates:${sanitizeRedisKey(userId)}:all`,
+  userSettings: (userId) => `settings:${sanitizeRedisKey(userId)}`,
+  contactList: (userId) => `contacts:${sanitizeRedisKey(userId)}:list`,
+  contactInfo: (userId, phoneNumber) => `contact:${sanitizeRedisKey(userId)}:${sanitizeRedisKey(phoneNumber)}`,
+  userSubscription: (userId) => `subscription:${sanitizeRedisKey(userId)}`,
 };
 
 class CacheService {
@@ -38,34 +46,48 @@ class CacheService {
    * @returns {Promise<Object|null>} Template object
    */
   async getTemplate(userId, templateId) {
-    const cacheKey = CacheKey.template(userId, templateId);
+    try {
+      // Validate inputs
+      const validatedUserId = validateUserId(userId);
+      const validatedTemplateId = validateTemplateId(templateId);
 
-    // Try cache first
-    let template = await redisClient.cacheGet(cacheKey);
+      const cacheKey = CacheKey.template(validatedUserId, validatedTemplateId);
 
-    if (template) {
-      console.log(`✅ Cache HIT: template ${templateId}`);
-      return template;
-    }
+      // Try cache first
+      let template = await redisClient.cacheGet(cacheKey);
 
-    console.log(`❌ Cache MISS: template ${templateId}, fetching from DB...`);
+      if (template) {
+        console.log(`✅ Cache HIT: template ${hashForLogging(validatedTemplateId)}`);
+        return template;
+      }
 
-    // Cache miss - fetch from database
-    const { data, error } = await supabase
-      .from('templates')
-      .select('*')
-      .eq('id', templateId)
-      .eq('user_id', userId)
-      .maybeSingle();
+      console.log(`❌ Cache MISS: template ${hashForLogging(validatedTemplateId)}, fetching from DB...`);
 
-    if (error || !data) {
+      // Cache miss - fetch from database
+      const { data, error } = await supabase
+        .from('templates')
+        .select('*')
+        .eq('id', validatedTemplateId)
+        .eq('user_id', validatedUserId)
+        .maybeSingle();
+
+      if (error) {
+        console.error(`⚠️  Error fetching template:`, sanitizeErrorMessage(error));
+        return null;
+      }
+
+      if (!data) {
+        return null;
+      }
+
+      // Store in cache (only store valid data)
+      await redisClient.cacheSet(cacheKey, data, CACHE_TTL.TEMPLATE);
+
+      return data;
+    } catch (error) {
+      console.error(`⚠️  Error in getTemplate:`, sanitizeErrorMessage(error));
       return null;
     }
-
-    // Store in cache
-    await redisClient.cacheSet(cacheKey, data, CACHE_TTL.TEMPLATE);
-
-    return data;
   }
 
   /**

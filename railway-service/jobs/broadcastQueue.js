@@ -10,10 +10,25 @@ const { supabase } = require('../config/supabase');
 const { validatePhoneNumber, validateMessage, validateMediaUrl } = require('../auth-utils');
 const { getMediaType, downloadMedia, prepareMediaMessage } = require('../utils/mediaHelpers');
 const { getWhatsAppName, getContactInfo, processMessageVariables } = require('../services/broadcast/messageVariables');
+const {
+  validateUserId,
+  validateDeviceId,
+  validateBroadcastId,
+  isValidPhoneNumber,
+  isValidMediaUrl,
+  isValidMessage,
+  sanitizeString,
+  sanitizeErrorMessage,
+  hashForLogging,
+} = require('../utils/inputValidation');
 
 // Queue configuration
 const QUEUE_NAME = 'broadcasts';
 const CONCURRENCY = 5; // Process 5 jobs in parallel
+
+// Security: Media download limits (DoS protection)
+const MAX_MEDIA_SIZE = 50 * 1024 * 1024; // 50MB max file size
+const MEDIA_DOWNLOAD_TIMEOUT = 30000; // 30 seconds timeout
 
 /**
  * Create Broadcast Queue
@@ -120,8 +135,9 @@ function calculateDelay(baseDelayMs, randomize) {
  */
 async function sendBroadcastMessage(sock, broadcast, contact, phoneNumber) {
   try {
-    if (!validatePhoneNumber(phoneNumber)) {
-      console.error(`❌ Invalid phone number format: ${phoneNumber}`);
+    // Security: Validate phone number
+    if (!isValidPhoneNumber(phoneNumber)) {
+      console.error(`❌ Invalid phone number format: ${hashForLogging(phoneNumber)}`);
       return false;
     }
 
@@ -134,13 +150,18 @@ async function sendBroadcastMessage(sock, broadcast, contact, phoneNumber) {
       phoneNumber
     );
 
-    if (processedMessage) {
-      validateMessage(processedMessage);
+    // Security: Validate message content
+    if (processedMessage && !isValidMessage(processedMessage)) {
+      console.error(`❌ Invalid message content`);
+      return false;
     }
 
-    if (broadcast.mediaUrl && !validateMediaUrl(broadcast.mediaUrl)) {
-      console.error(`❌ Invalid media URL: ${broadcast.mediaUrl}`);
-      return false;
+    // Security: Validate media URL with SSRF protection
+    if (broadcast.mediaUrl) {
+      if (!isValidMediaUrl(broadcast.mediaUrl)) {
+        console.error(`❌ Invalid or unsafe media URL (SSRF protection)`);
+        return false;
+      }
     }
 
     const jid = phoneNumber.includes('@') ? phoneNumber : `${phoneNumber}@s.whatsapp.net`;
@@ -149,20 +170,34 @@ async function sendBroadcastMessage(sock, broadcast, contact, phoneNumber) {
     if (broadcast.mediaUrl) {
       try {
         const mediaType = getMediaType(broadcast.mediaUrl);
-        const mediaBuffer = await downloadMedia(broadcast.mediaUrl, 3);
+
+        // Security: Download with timeout and size limit
+        const downloadPromise = downloadMedia(broadcast.mediaUrl, 3, MAX_MEDIA_SIZE);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Media download timeout')), MEDIA_DOWNLOAD_TIMEOUT)
+        );
+
+        const mediaBuffer = await Promise.race([downloadPromise, timeoutPromise]);
+
+        // Security: Check media size
+        if (mediaBuffer.length > MAX_MEDIA_SIZE) {
+          throw new Error(`Media file too large: ${mediaBuffer.length} bytes`);
+        }
+
         messageContent = prepareMediaMessage(mediaBuffer, mediaType, processedMessage);
       } catch (mediaError) {
-        console.error(`❌ Error loading media:`, mediaError.message);
-        messageContent = { text: broadcast.message };
+        console.error(`❌ Error loading media:`, sanitizeErrorMessage(mediaError));
+        // Fallback to text message
+        messageContent = { text: sanitizeString(broadcast.message) };
       }
     } else {
-      messageContent = { text: processedMessage };
+      messageContent = { text: sanitizeString(processedMessage) };
     }
 
     await sock.sendMessage(jid, messageContent);
     return true;
   } catch (error) {
-    console.error(`❌ Failed to send to ${phoneNumber}:`, error.message);
+    console.error(`❌ Failed to send to ${hashForLogging(phoneNumber)}:`, sanitizeErrorMessage(error));
     return false;
   }
 }

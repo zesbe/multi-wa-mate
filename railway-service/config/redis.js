@@ -58,7 +58,8 @@ function createIORedisConnection() {
     });
 
     connection.on('error', (err) => {
-      console.error('❌ ioredis connection error:', err.message);
+      // Security: Don't log connection strings or sensitive info
+      console.error('❌ ioredis connection error:', err.message.replace(/redis[s]?:\/\/[^@]*@/, 'redis://***:***@'));
     });
 
     connection.on('close', () => {

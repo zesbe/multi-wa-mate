@@ -6,6 +6,12 @@
 
 const redisClient = require('../../redis-client');
 const { supabase } = require('../../config/supabase');
+const {
+  validateUserId,
+  sanitizeRedisKey,
+  sanitizeErrorMessage,
+  hashForLogging,
+} = require('../../utils/inputValidation');
 
 /**
  * Rate limit configurations per feature
@@ -52,10 +58,10 @@ const RATE_LIMITS = {
  * Rate limit key generators
  */
 const RateLimitKey = {
-  broadcast: (userId, window) => `ratelimit:user:${userId}:broadcast:${window}`,
-  message: (userId, window) => `ratelimit:user:${userId}:message:${window}`,
-  apiCall: (userId, window) => `ratelimit:user:${userId}:api:${window}`,
-  deviceConnection: (userId) => `ratelimit:user:${userId}:device:connection`,
+  broadcast: (userId, window) => `ratelimit:user:${sanitizeRedisKey(userId)}:broadcast:${window}`,
+  message: (userId, window) => `ratelimit:user:${sanitizeRedisKey(userId)}:message:${window}`,
+  apiCall: (userId, window) => `ratelimit:user:${sanitizeRedisKey(userId)}:api:${window}`,
+  deviceConnection: (userId) => `ratelimit:user:${sanitizeRedisKey(userId)}:device:connection`,
 };
 
 class UserRateLimitService {
@@ -66,14 +72,28 @@ class UserRateLimitService {
    */
   async getUserPlanLimits(userId) {
     try {
-      const { data: subscription } = await supabase
+      // Validate user ID to prevent injection
+      const validatedUserId = validateUserId(userId);
+
+      const { data: subscription, error } = await supabase
         .from('subscriptions')
         .select('plans(name, features)')
-        .eq('user_id', userId)
+        .eq('user_id', validatedUserId)
         .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
+
+      if (error) {
+        console.error(`⚠️  Database error for user ${hashForLogging(validatedUserId)}:`, sanitizeErrorMessage(error));
+        // Fail open - return unlimited on error
+        return {
+          planName: 'Error - Unlimited',
+          broadcastPerDay: RATE_LIMITS.DEFAULT.BROADCAST_PER_DAY,
+          messagePerDay: RATE_LIMITS.DEFAULT.MESSAGE_PER_DAY,
+          apiCallPerHour: RATE_LIMITS.DEFAULT.API_CALL_PER_HOUR,
+        };
+      }
 
       if (!subscription || !subscription.plans) {
         // No active subscription - use default (unlimited)
@@ -88,21 +108,25 @@ class UserRateLimitService {
       const plan = subscription.plans;
       const features = plan.features || {};
 
-      // Extract limits from plan features
+      // Extract limits from plan features with type validation
       // Expected format in plans.features (JSONB):
       // {
       //   "broadcastPerDay": 1000,
       //   "messagePerDay": 10000,
       //   "apiCallPerHour": 5000
       // }
+      const broadcastLimit = Number(features.broadcastPerDay) || RATE_LIMITS.DEFAULT.BROADCAST_PER_DAY;
+      const messageLimit = Number(features.messagePerDay) || RATE_LIMITS.DEFAULT.MESSAGE_PER_DAY;
+      const apiLimit = Number(features.apiCallPerHour) || RATE_LIMITS.DEFAULT.API_CALL_PER_HOUR;
+
       return {
         planName: plan.name,
-        broadcastPerDay: features.broadcastPerDay || RATE_LIMITS.DEFAULT.BROADCAST_PER_DAY,
-        messagePerDay: features.messagePerDay || RATE_LIMITS.DEFAULT.MESSAGE_PER_DAY,
-        apiCallPerHour: features.apiCallPerHour || RATE_LIMITS.DEFAULT.API_CALL_PER_HOUR,
+        broadcastPerDay: Math.max(0, broadcastLimit), // Ensure non-negative
+        messagePerDay: Math.max(0, messageLimit),
+        apiCallPerHour: Math.max(0, apiLimit),
       };
     } catch (error) {
-      console.error('Error fetching user plan limits:', error);
+      console.error(`⚠️  Error fetching plan limits for user ${hashForLogging(userId)}:`, sanitizeErrorMessage(error));
       // On error, return unlimited (fail open)
       return {
         planName: 'Error - Unlimited',

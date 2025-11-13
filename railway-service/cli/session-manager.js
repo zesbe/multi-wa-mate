@@ -15,6 +15,7 @@
 
 const { supabase } = require('../config/supabase');
 const redisClient = require('../redis-client');
+const { validateDeviceId, isValidUUID, sanitizeErrorMessage } = require('../utils/inputValidation');
 
 const COMMANDS = {
   LIST: 'list',
@@ -65,34 +66,45 @@ async function listDevices() {
  * Clear device session
  */
 async function clearDeviceSession(deviceId) {
-  console.log(`🗑️  Clearing session for device: ${deviceId}\n`);
+  try {
+    // Security: Validate device ID
+    if (!isValidUUID(deviceId)) {
+      console.error('❌ Invalid device ID format (must be UUID)');
+      return;
+    }
 
-  // 1. Clear session data from database
-  const { error: dbError } = await supabase
-    .from('devices')
-    .update({
-      session_data: null,
-      status: 'disconnected',
-      phone_number: null,
-      qr_code: null,
-      pairing_code: null,
-      last_connected_at: null,
-    })
-    .eq('id', deviceId);
+    const validatedDeviceId = validateDeviceId(deviceId);
+    console.log(`🗑️  Clearing session for device: ${validatedDeviceId}\n`);
 
-  if (dbError) {
-    console.error('❌ Error clearing database session:', dbError.message);
-    return;
+    // 1. Clear session data from database
+    const { error: dbError } = await supabase
+      .from('devices')
+      .update({
+        session_data: null,
+        status: 'disconnected',
+        phone_number: null,
+        qr_code: null,
+        pairing_code: null,
+        last_connected_at: null,
+      })
+      .eq('id', validatedDeviceId);
+
+    if (dbError) {
+      console.error('❌ Error clearing database session:', sanitizeErrorMessage(dbError));
+      return;
+    }
+
+    console.log('✅ Database session cleared');
+
+    // 2. Clear Redis cache
+    await redisClient.cleanupDevice(validatedDeviceId);
+    console.log('✅ Redis cache cleared');
+
+    console.log('\n✅ Session cleared successfully');
+    console.log('ℹ️  Device can now reconnect with a fresh session');
+  } catch (error) {
+    console.error('❌ Error:', sanitizeErrorMessage(error));
   }
-
-  console.log('✅ Database session cleared');
-
-  // 2. Clear Redis cache
-  await redisClient.cleanupDevice(deviceId);
-  console.log('✅ Redis cache cleared');
-
-  console.log('\n✅ Session cleared successfully');
-  console.log('ℹ️  Device can now reconnect with a fresh session');
 }
 
 /**
@@ -124,18 +136,31 @@ async function clearAllSessions() {
  * Get device status
  */
 async function getDeviceStatus(deviceId) {
-  console.log(`📊 Fetching status for device: ${deviceId}\n`);
+  try {
+    // Security: Validate device ID
+    if (!isValidUUID(deviceId)) {
+      console.error('❌ Invalid device ID format (must be UUID)');
+      return;
+    }
 
-  const { data, error } = await supabase
-    .from('devices')
-    .select('*')
-    .eq('id', deviceId)
-    .maybeSingle();
+    const validatedDeviceId = validateDeviceId(deviceId);
+    console.log(`📊 Fetching status for device: ${validatedDeviceId}\n`);
 
-  if (error || !data) {
-    console.error('❌ Device not found');
-    return;
-  }
+    const { data, error } = await supabase
+      .from('devices')
+      .select('*')
+      .eq('id', validatedDeviceId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('❌ Error:', sanitizeErrorMessage(error));
+      return;
+    }
+
+    if (!data) {
+      console.error('❌ Device not found');
+      return;
+    }
 
   console.log('Device Information:');
   console.log('─'.repeat(50));
@@ -150,23 +175,26 @@ async function getDeviceStatus(deviceId) {
   console.log(`Multi-device:   ${data.is_multidevice ? 'Yes' : 'No'}`);
   console.log(`Server ID:      ${data.server_id || 'N/A'}`);
 
-  // Check Redis cache
-  const qrCode = await redisClient.getQRCode(deviceId);
-  const pairingCode = await redisClient.getPairingCode(deviceId);
+    // Check Redis cache
+    const qrCode = await redisClient.getQRCode(validatedDeviceId);
+    const pairingCode = await redisClient.getPairingCode(validatedDeviceId);
 
-  console.log('\nCache Status:');
-  console.log('─'.repeat(50));
-  console.log(`QR Code cached: ${qrCode ? 'Yes' : 'No'}`);
-  console.log(`Pairing code:   ${pairingCode || 'None'}`);
+    console.log('\nCache Status:');
+    console.log('─'.repeat(50));
+    console.log(`QR Code cached: ${qrCode ? 'Yes' : 'No'}`);
+    console.log(`Pairing code:   ${pairingCode || 'None'}`);
 
-  // Session data
-  console.log('\nSession Data:');
-  console.log('─'.repeat(50));
-  console.log(`Has session:    ${data.session_data ? 'Yes' : 'No'}`);
+    // Session data
+    console.log('\nSession Data:');
+    console.log('─'.repeat(50));
+    console.log(`Has session:    ${data.session_data ? 'Yes' : 'No'}`);
 
-  if (data.session_data) {
-    const savedAt = data.session_data.saved_at;
-    console.log(`Session saved:  ${savedAt || 'Unknown'}`);
+    if (data.session_data) {
+      const savedAt = data.session_data.saved_at;
+      console.log(`Session saved:  ${savedAt || 'Unknown'}`);
+    }
+  } catch (error) {
+    console.error('❌ Error:', sanitizeErrorMessage(error));
   }
 }
 
@@ -174,24 +202,35 @@ async function getDeviceStatus(deviceId) {
  * Disconnect device
  */
 async function disconnectDevice(deviceId) {
-  console.log(`🔌 Disconnecting device: ${deviceId}\n`);
+  try {
+    // Security: Validate device ID
+    if (!isValidUUID(deviceId)) {
+      console.error('❌ Invalid device ID format (must be UUID)');
+      return;
+    }
 
-  const { error } = await supabase
-    .from('devices')
-    .update({
-      status: 'disconnected',
-      qr_code: null,
-      pairing_code: null,
-    })
-    .eq('id', deviceId);
+    const validatedDeviceId = validateDeviceId(deviceId);
+    console.log(`🔌 Disconnecting device: ${validatedDeviceId}\n`);
 
-  if (error) {
-    console.error('❌ Error:', error.message);
-    return;
+    const { error } = await supabase
+      .from('devices')
+      .update({
+        status: 'disconnected',
+        qr_code: null,
+        pairing_code: null,
+      })
+      .eq('id', validatedDeviceId);
+
+    if (error) {
+      console.error('❌ Error:', sanitizeErrorMessage(error));
+      return;
+    }
+
+    console.log('✅ Device disconnected');
+    console.log('ℹ️  The device will be marked as disconnected and will attempt to reconnect');
+  } catch (error) {
+    console.error('❌ Error:', sanitizeErrorMessage(error));
   }
-
-  console.log('✅ Device disconnected');
-  console.log('ℹ️  The device will be marked as disconnected and will attempt to reconnect');
 }
 
 /**

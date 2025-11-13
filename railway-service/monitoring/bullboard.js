@@ -52,13 +52,57 @@ function createQueueDashboard() {
 }
 
 /**
- * Simple authentication middleware for BullBoard
- * In production, replace with proper authentication
+ * Rate limiting for authentication attempts
+ * Prevents brute force attacks
+ */
+const authAttempts = new Map();
+
+function isRateLimited(ip) {
+  const now = Date.now();
+  const attempts = authAttempts.get(ip) || { count: 0, resetAt: now + 60000 };
+
+  // Reset if time window passed
+  if (now > attempts.resetAt) {
+    attempts.count = 0;
+    attempts.resetAt = now + 60000;
+  }
+
+  attempts.count++;
+  authAttempts.set(ip, attempts);
+
+  // Max 5 attempts per minute
+  return attempts.count > 5;
+}
+
+function cleanupRateLimitMap() {
+  const now = Date.now();
+  for (const [ip, attempts] of authAttempts.entries()) {
+    if (now > attempts.resetAt) {
+      authAttempts.delete(ip);
+    }
+  }
+}
+
+// Cleanup rate limit map every 5 minutes
+setInterval(cleanupRateLimitMap, 5 * 60 * 1000);
+
+/**
+ * Authentication middleware for BullBoard with rate limiting
+ * Protects against brute force attacks
  * @param {string} username - Admin username
  * @param {string} password - Admin password
  */
 function createAuthMiddleware(username = 'admin', password = process.env.ADMIN_PASSWORD || 'changeme') {
   return (req, res, next) => {
+    const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
+
+    // Rate limiting check
+    if (isRateLimited(clientIp)) {
+      console.warn(`⚠️  Rate limit exceeded for IP: ${clientIp}`);
+      res.status(429).send('Too many authentication attempts. Please try again later.');
+      return;
+    }
+
     const auth = req.headers.authorization;
 
     if (!auth) {
@@ -74,13 +118,21 @@ function createAuthMiddleware(username = 'admin', password = process.env.ADMIN_P
       return;
     }
 
-    const [user, pass] = Buffer.from(credentials, 'base64').toString().split(':');
+    try {
+      const [user, pass] = Buffer.from(credentials, 'base64').toString().split(':');
 
-    if (user === username && pass === password) {
-      next();
-    } else {
-      res.setHeader('WWW-Authenticate', 'Basic realm="BullBoard"');
-      res.status(401).send('Invalid credentials');
+      if (user === username && pass === password) {
+        // Success - reset rate limit for this IP
+        authAttempts.delete(clientIp);
+        next();
+      } else {
+        console.warn(`⚠️  Failed auth attempt for user '${user}' from IP: ${clientIp}`);
+        res.setHeader('WWW-Authenticate', 'Basic realm="BullBoard"');
+        res.status(401).send('Invalid credentials');
+      }
+    } catch (error) {
+      console.error('⚠️  Auth parsing error:', error.message);
+      res.status(401).send('Invalid authentication format');
     }
   };
 }
