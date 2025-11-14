@@ -163,6 +163,7 @@ async function handleDisconnection({
   const message = lastDisconnect?.error?.message || '';
   const restartRequired = code === DisconnectReason.restartRequired || code === 515 || /restart required/i.test(message);
   const loggedOut = code === DisconnectReason.loggedOut;
+  const conflict = code === 440 || /conflict/i.test(message);
 
   console.log('🔌 Connection closed');
   console.log('📊 Disconnect statusCode:', code);
@@ -180,6 +181,7 @@ async function handleDisconnection({
     details: {
       restartRequired,
       loggedOut,
+      conflict,
       disconnectCode: code,
       timestamp: new Date().toISOString()
     }
@@ -198,6 +200,25 @@ async function handleDisconnection({
       return;
     }
 
+    // 🚨 CONFLICT ERROR (440) - Multiple connections detected
+    if (conflict) {
+      console.log(`⚠️ [${deviceName}] CONFLICT detected (440) - Multiple connections to same device!`);
+      console.log(`⚠️ [${deviceName}] This usually means the device is logged in elsewhere (another browser/device)`);
+      console.log(`⚠️ [${deviceName}] Clearing session - user needs to scan QR again`);
+
+      await supabase.from('devices').update({
+        status: 'error',
+        error_message: 'Conflict: Device sudah terhubung di tempat lain. Silakan logout dari device lain atau scan QR ulang.',
+        qr_code: null,
+        pairing_code: null,
+        session_data: null,
+        updated_at: new Date().toISOString()
+      }).eq('id', deviceId);
+
+      // DO NOT auto-reconnect on conflict - let user manually reconnect
+      return;
+    }
+
     if (restartRequired) {
       // Keep auth, try session recovery
       console.log(`♻️ [${deviceName}] Restart required - attempting session recovery`);
@@ -207,7 +228,7 @@ async function handleDisconnection({
         console.log(`🔄 [${deviceName}] Session data available - recovering without QR`);
         setTimeout(() => {
           if (!activeSockets.has(deviceId)) {
-            connectWhatsApp(device, true).catch(() => {}); // Recovery mode
+            connectWhatsApp(device, true, activeSockets).catch(() => {}); // Recovery mode
           }
         }, 1500);
       } else {
@@ -215,7 +236,7 @@ async function handleDisconnection({
         await supabase.from('devices').update({ status: 'connecting' }).eq('id', deviceId);
         setTimeout(() => {
           if (!activeSockets.has(deviceId)) {
-            connectWhatsApp(device).catch(() => {});
+            connectWhatsApp(device, false, activeSockets).catch(() => {});
           }
         }, 1500);
       }
@@ -231,7 +252,7 @@ async function handleDisconnection({
       setTimeout(() => {
         if (!activeSockets.has(deviceId)) {
           console.log(`🔁 [${deviceName}] Reconnect after auth failure...`);
-          connectWhatsApp(device).catch(() => {});
+          connectWhatsApp(device, false, activeSockets).catch(() => {});
         }
       }, 1000);
     } else if (loggedOut) {
@@ -253,7 +274,7 @@ async function handleDisconnection({
         setTimeout(() => {
           if (!activeSockets.has(deviceId)) {
             console.log(`🔁 [${deviceName}] Attempting session recovery...`);
-            connectWhatsApp(device, true).catch(() => {});
+            connectWhatsApp(device, true, activeSockets).catch(() => {});
           }
         }, 500);
       } else {
@@ -262,7 +283,7 @@ async function handleDisconnection({
         setTimeout(() => {
           if (!activeSockets.has(deviceId)) {
             console.log(`🔁 [${deviceName}] Attempting reconnect...`);
-            connectWhatsApp(device).catch(() => {});
+            connectWhatsApp(device, false, activeSockets).catch(() => {});
           }
         }, 500);
       }
@@ -282,10 +303,34 @@ async function connectWhatsApp(device, isRecovery = false, activeSockets) {
   const deviceName = device.device_name || 'Unknown';
   const deviceId = device.id;
 
+  // 🛡️ PREVENT DOUBLE CONNECTIONS - Check if socket already exists
+  if (activeSockets && activeSockets.has(deviceId)) {
+    const existingSocket = activeSockets.get(deviceId);
+    if (existingSocket && existingSocket.user) {
+      console.log(`⚠️ [${deviceName}] Socket already exists and is authenticated - skipping duplicate connection`);
+      return;
+    } else {
+      console.log(`⚠️ [${deviceName}] Socket exists but not authenticated - cleaning up before reconnect`);
+      try {
+        existingSocket?.end();
+      } catch (e) {
+        console.error(`❌ [${deviceName}] Error ending existing socket:`, e);
+      }
+      activeSockets.delete(deviceId);
+    }
+  }
+
   if (isRecovery) {
     console.log(`🔄 [${deviceName}] Session Recovery Mode`);
   } else {
     console.log(`📱 [${deviceName}] Starting connection...`);
+  }
+
+  // 🛡️ VALIDATE activeSockets parameter
+  if (!activeSockets) {
+    console.error(`❌ [${deviceName}] CRITICAL: activeSockets parameter is undefined!`);
+    console.error(`❌ [${deviceName}] This is a bug - connectWhatsApp must be called with activeSockets parameter`);
+    throw new Error('activeSockets parameter is required');
   }
 
   try {
