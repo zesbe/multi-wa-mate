@@ -6,6 +6,7 @@ const { handleQRCode } = require('../../qr-handler');
 const { setupCRMMessageListeners } = require('../../crm-message-handler');
 const { logger } = require('../../logger');
 const { logConnectionEvent, updateDeviceHealth } = require('../device/deviceSecurityLogger'); // 🔒 Security logging
+const { serverAssignmentService } = require('../server/serverAssignmentService'); // 🆕 Multi-server support
 
 /**
  * Request pairing code for WhatsApp connection
@@ -334,6 +335,36 @@ async function connectWhatsApp(device, isRecovery = false, activeSockets) {
   }
 
   try {
+    // 🆕 MULTI-SERVER: Auto-assign device to this server if not assigned
+    if (!device.assigned_server_id && serverAssignmentService.serverId) {
+      logger.info(`🔧 [${deviceName}] Auto-assigning device to server`, {
+        deviceId: device.id,
+        serverId: serverAssignmentService.serverId
+      });
+
+      const assigned = await serverAssignmentService.assignDeviceToCurrentServer(
+        device.id,
+        device.user_id
+      );
+
+      if (assigned) {
+        logger.info(`✅ [${deviceName}] Device auto-assigned successfully`, {
+          deviceId: device.id,
+          serverId: serverAssignmentService.serverId
+        });
+      } else {
+        logger.warn(`⚠️ [${deviceName}] Failed to auto-assign device`, {
+          deviceId: device.id,
+          serverId: serverAssignmentService.serverId
+        });
+      }
+    } else if (device.assigned_server_id) {
+      logger.debug(`✓ [${deviceName}] Device already assigned to server`, {
+        deviceId: device.id,
+        assignedServer: device.assigned_server_id,
+        currentServer: serverAssignmentService.serverId
+      });
+    }
     // Load auth state from Supabase
     const { state, saveCreds } = await useSupabaseAuthState(deviceId);
 

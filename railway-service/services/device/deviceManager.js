@@ -1,4 +1,28 @@
+/**
+ * 🔒 ENTERPRISE-GRADE DEVICE MANAGER
+ *
+ * Purpose: Manage WhatsApp device connections with multi-server awareness
+ *
+ * Features:
+ * - Server-aware device filtering (prevents duplicate connections)
+ * - Automatic stuck device recovery
+ * - Session recovery after restarts
+ * - Comprehensive error handling
+ * - Audit logging for all device state changes
+ *
+ * @module DeviceManager
+ * @author HalloWa.id
+ * @version 2.0.0
+ */
+
 const { supabase } = require('../../config/supabase');
+const { serverAssignmentService } = require('../server/serverAssignmentService');
+const { logger } = require('../../logger');
+
+// 🔒 SECURITY: Configuration constants
+const DEVICE_STUCK_TIMEOUT = 120; // seconds
+const RECONNECT_DELAY_SHORT = 500; // milliseconds
+const RECONNECT_DELAY_LONG = 1500; // milliseconds
 
 /**
  * Check if device is stuck in connecting status
@@ -11,7 +35,7 @@ function isDeviceStuck(device) {
     const now = Date.now();
     const stuckTime = (now - lastUpdate) / 1000; // seconds
 
-    return stuckTime > 120; // Stuck if > 2 minutes
+    return stuckTime > DEVICE_STUCK_TIMEOUT;
   }
   return false;
 }
@@ -21,17 +45,75 @@ function isDeviceStuck(device) {
  * @param {Object} device - Device object
  */
 async function clearStuckDeviceSession(device) {
-  const lastUpdate = new Date(device.updated_at).getTime();
-  const now = Date.now();
-  const stuckTime = (now - lastUpdate) / 1000;
+  try {
+    const lastUpdate = new Date(device.updated_at).getTime();
+    const now = Date.now();
+    const stuckTime = Math.floor((now - lastUpdate) / 1000);
 
-  console.log(`⚠️ Device ${device.device_name} stuck in connecting for ${stuckTime}s - clearing session`);
+    logger.warn('⚠️ Clearing stuck device session', {
+      deviceId: device.id,
+      deviceName: device.device_name,
+      stuckDuration: `${stuckTime}s`,
+      status: device.status
+    });
 
-  await supabase.from('devices').update({
-    status: 'disconnected',
-    qr_code: null,
-    session_data: null
-  }).eq('id', device.id);
+    const { error } = await supabase
+      .from('devices')
+      .update({
+        status: 'disconnected',
+        qr_code: null,
+        session_data: null,
+        error_message: `Connection stuck for ${stuckTime}s - session cleared`,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', device.id);
+
+    if (error) {
+      logger.error('❌ Failed to clear stuck device session', {
+        deviceId: device.id,
+        error: error.message
+      });
+    } else {
+      logger.info('✅ Stuck device session cleared', {
+        deviceId: device.id,
+        deviceName: device.device_name
+      });
+    }
+  } catch (error) {
+    logger.error('❌ Exception in clearStuckDeviceSession', {
+      deviceId: device?.id,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * 🔒 Validate device ownership before connecting
+ * @param {Object} device - Device object
+ * @returns {boolean} True if valid
+ */
+function validateDevice(device) {
+  if (!device) {
+    logger.error('❌ Device validation failed: device is null');
+    return false;
+  }
+
+  if (!device.id || typeof device.id !== 'string') {
+    logger.error('❌ Device validation failed: invalid device ID', {
+      deviceId: device.id
+    });
+    return false;
+  }
+
+  if (!device.user_id || typeof device.user_id !== 'string') {
+    logger.error('❌ Device validation failed: invalid user ID', {
+      deviceId: device.id,
+      userId: device.user_id
+    });
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -41,15 +123,39 @@ async function clearStuckDeviceSession(device) {
  * @param {Map} activeSockets - Map of active sockets
  */
 async function handleMissingSocket(device, connectWhatsApp, activeSockets) {
-  const hasSessionData = device.session_data?.creds?.registered;
+  try {
+    // 🔒 SECURITY: Validate device before connecting
+    if (!validateDevice(device)) {
+      return;
+    }
 
-  if (device.status === 'connected' && hasSessionData) {
-    // Railway restart detected - try to recover session
-    console.log(`🔄 Recovering session for: ${device.device_name} (Railway restart detected)`);
-    await connectWhatsApp(device, true, activeSockets);
-  } else {
-    console.log(`🔄 Connecting device: ${device.device_name} [status=${device.status}]`);
-    await connectWhatsApp(device, false, activeSockets);
+    const hasSessionData = device.session_data?.creds?.registered;
+
+    if (device.status === 'connected' && hasSessionData) {
+      // Railway restart detected - try to recover session
+      logger.info('🔄 Recovering session (restart detected)', {
+        deviceId: device.id,
+        deviceName: device.device_name,
+        hasSession: true
+      });
+
+      await connectWhatsApp(device, true, activeSockets);
+    } else {
+      logger.info('🔄 Connecting device', {
+        deviceId: device.id,
+        deviceName: device.device_name,
+        status: device.status,
+        hasSession: hasSessionData
+      });
+
+      await connectWhatsApp(device, false, activeSockets);
+    }
+  } catch (error) {
+    logger.error('❌ Error in handleMissingSocket', {
+      deviceId: device?.id,
+      deviceName: device?.device_name,
+      error: error.message
+    });
   }
 }
 
@@ -61,19 +167,69 @@ async function handleMissingSocket(device, connectWhatsApp, activeSockets) {
  * @param {Map} activeSockets - Map of active sockets
  */
 async function handleUnauthenticatedSocket(device, sock, connectWhatsApp, activeSockets) {
-  const hasSessionData = device.session_data?.creds?.registered;
+  try {
+    const hasSessionData = device.session_data?.creds?.registered;
 
-  console.log(`⚠️ Socket exists but not authenticated for ${device.device_name}`);
-  sock.end();
-  activeSockets.delete(device.id);
+    logger.warn('⚠️ Socket exists but not authenticated', {
+      deviceId: device.id,
+      deviceName: device.device_name,
+      hasSession: hasSessionData
+    });
 
-  if (hasSessionData) {
-    console.log(`🔄 Attempting session recovery for ${device.device_name}`);
-    setTimeout(() => connectWhatsApp(device, true, activeSockets).catch(() => {}), 500);
-  } else {
-    console.log(`🔄 No session data - will generate QR/pairing code`);
-    await supabase.from('devices').update({ status: 'connecting' }).eq('id', device.id);
-    setTimeout(() => connectWhatsApp(device, false, activeSockets).catch(() => {}), 500);
+    // End existing socket
+    try {
+      sock.end();
+    } catch (endError) {
+      logger.error('❌ Error ending socket', {
+        deviceId: device.id,
+        error: endError.message
+      });
+    }
+
+    activeSockets.delete(device.id);
+
+    if (hasSessionData) {
+      logger.info('🔄 Attempting session recovery', {
+        deviceId: device.id,
+        deviceName: device.device_name
+      });
+
+      setTimeout(() => {
+        connectWhatsApp(device, true, activeSockets).catch((error) => {
+          logger.error('❌ Session recovery failed', {
+            deviceId: device.id,
+            error: error.message
+          });
+        });
+      }, RECONNECT_DELAY_SHORT);
+    } else {
+      logger.info('🔄 No session data - will generate QR/pairing code', {
+        deviceId: device.id,
+        deviceName: device.device_name
+      });
+
+      await supabase
+        .from('devices')
+        .update({
+          status: 'connecting',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', device.id);
+
+      setTimeout(() => {
+        connectWhatsApp(device, false, activeSockets).catch((error) => {
+          logger.error('❌ Reconnection failed', {
+            deviceId: device.id,
+            error: error.message
+          });
+        });
+      }, RECONNECT_DELAY_SHORT);
+    }
+  } catch (error) {
+    logger.error('❌ Error in handleUnauthenticatedSocket', {
+      deviceId: device?.id,
+      error: error.message
+    });
   }
 }
 
@@ -84,43 +240,101 @@ async function handleUnauthenticatedSocket(device, sock, connectWhatsApp, active
  * @param {Map} activeSockets - Map of active sockets
  */
 async function disconnectDevice(deviceId, sock, activeSockets) {
-  console.log(`❌ Disconnecting device: ${deviceId}`);
-  sock?.end();
-  activeSockets.delete(deviceId);
-
-  // Clean auth on explicit disconnect
   try {
-    await supabase.from('devices').update({
-      qr_code: null,
-      session_data: null
-    }).eq('id', deviceId);
-  } catch (e) {
-    console.error('❌ Error cleaning auth on disconnect:', e);
+    logger.info('❌ Disconnecting device', {
+      deviceId,
+      reason: 'status_changed_or_deleted'
+    });
+
+    // End socket
+    try {
+      sock?.end();
+    } catch (endError) {
+      logger.error('❌ Error ending socket during disconnect', {
+        deviceId,
+        error: endError.message
+      });
+    }
+
+    activeSockets.delete(deviceId);
+
+    // Clean auth on explicit disconnect
+    try {
+      const { error } = await supabase
+        .from('devices')
+        .update({
+          qr_code: null,
+          session_data: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', deviceId);
+
+      if (error) {
+        logger.error('❌ Error cleaning auth on disconnect', {
+          deviceId,
+          error: error.message
+        });
+      }
+    } catch (cleanError) {
+      logger.error('❌ Exception cleaning auth on disconnect', {
+        deviceId,
+        error: cleanError.message
+      });
+    }
+  } catch (error) {
+    logger.error('❌ Error in disconnectDevice', {
+      deviceId,
+      error: error.message
+    });
   }
 }
 
 /**
- * Check devices and ensure proper connections
+ * 🔒 ENTERPRISE-GRADE DEVICE CHECKER
+ *
  * Main device management function that runs periodically
+ * Now with multi-server awareness to prevent duplicate connections
+ *
  * @param {Map} activeSockets - Map of active WhatsApp sockets
  * @param {Function} connectWhatsApp - WhatsApp connection function
  */
 async function checkDevices(activeSockets, connectWhatsApp) {
   try {
-    const { data: devices, error } = await supabase
-      .from('devices')
-      .select('*')
-      .in('status', ['connecting', 'connected']);
+    // 🆕 MULTI-SERVER: Get only devices assigned to THIS server
+    const devices = await serverAssignmentService.getAssignedDevices(['connecting', 'connected']);
 
-    if (error) {
-      console.error('❌ Error fetching devices:', error);
+    if (!devices || devices.length === 0) {
+      logger.debug('No devices assigned to this server', {
+        serverId: serverAssignmentService.serverId
+      });
       return;
     }
 
+    logger.debug('Checking assigned devices', {
+      serverId: serverAssignmentService.serverId,
+      deviceCount: devices.length
+    });
+
     // Ensure sockets for devices that should be online
-    const needSockets = devices?.filter(d => ['connecting', 'connected'].includes(d.status)) || [];
+    const needSockets = devices.filter(d => ['connecting', 'connected'].includes(d.status));
 
     for (const device of needSockets) {
+      // 🔒 SECURITY: Validate device before processing
+      if (!validateDevice(device)) {
+        continue;
+      }
+
+      // 🆕 MULTI-SERVER: Double-check if this server should handle this device
+      if (!serverAssignmentService.shouldHandleDevice(device)) {
+        logger.warn('⚠️ Device not assigned to this server - skipping', {
+          deviceId: device.id,
+          deviceName: device.device_name,
+          assignedServer: device.assigned_server_id,
+          currentServer: serverAssignmentService.serverId
+        });
+        continue;
+      }
+
       const sock = activeSockets.get(device.id);
 
       // Check if device stuck in connecting for too long (>2 minutes)
@@ -140,16 +354,33 @@ async function checkDevices(activeSockets, connectWhatsApp) {
 
     // Disconnect devices that should be disconnected
     for (const [deviceId, sock] of activeSockets) {
-      const device = devices?.find(d => d.id === deviceId);
+      const device = devices.find(d => d.id === deviceId);
+
       if (!device || device.status === 'disconnected') {
         await disconnectDevice(deviceId, sock, activeSockets);
       }
     }
 
-    console.log(`✅ Active connections: ${activeSockets.size}`);
+    logger.info('✅ Device check complete', {
+      serverId: serverAssignmentService.serverId,
+      activeConnections: activeSockets.size,
+      assignedDevices: devices.length
+    });
+
   } catch (error) {
-    console.error('❌ Error in checkDevices:', error);
+    logger.error('❌ Error in checkDevices', {
+      error: error.message,
+      stack: error.stack
+    });
   }
 }
 
-module.exports = { checkDevices };
+module.exports = {
+  checkDevices,
+  isDeviceStuck,
+  clearStuckDeviceSession,
+  validateDevice,
+  handleMissingSocket,
+  handleUnauthenticatedSocket,
+  disconnectDevice
+};

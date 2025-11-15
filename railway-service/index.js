@@ -15,6 +15,11 @@ const { checkAutoPostSchedules } = require('./auto-post-handler');
 const { createHTTPServer } = require('./http-server');
 const { createBroadcastWorker, createQueueEvents } = require('./jobs/broadcastQueue');
 
+// 🆕 MULTI-SERVER: Import server services
+const { serverIdentifier } = require('./services/server/serverIdentifier');
+const { serverAssignmentService } = require('./services/server/serverAssignmentService');
+const { logger } = require('./logger');
+
 // Store active WhatsApp sockets
 const activeSockets = new Map();
 
@@ -29,6 +34,27 @@ let queueEvents = null;
 async function startService() {
   console.log('🚀 WhatsApp Baileys Service Started');
   console.log('📡 Using hybrid architecture: Polling + BullMQ Queue');
+
+  // 🆕 MULTI-SERVER: Initialize server identification
+  try {
+    logger.info('🔧 Initializing server identification...');
+    const serverId = serverIdentifier.initialize();
+    logger.info('✅ Server identified', {
+      serverId: serverId,
+      type: serverIdentifier.getServerType()
+    });
+
+    // Initialize server assignment service
+    logger.info('🔧 Initializing server assignment service...');
+    await serverAssignmentService.initialize();
+    logger.info('✅ Server assignment service ready');
+
+  } catch (error) {
+    logger.error('❌ Failed to initialize multi-server support', {
+      error: error.message
+    });
+    logger.warn('⚠️ Continuing without multi-server features');
+  }
 
   // Start HTTP server for CRM message sending
   const httpServer = createHTTPServer(activeSockets);
@@ -94,6 +120,18 @@ async function startService() {
   // Check auto-post schedules every 30 seconds
   setInterval(() => checkAutoPostSchedules(activeSockets), 30000);
   console.log('📅 Auto-post scheduler started (every 30 seconds)');
+
+  // 🆕 MULTI-SERVER: Update server health every 60 seconds
+  if (serverAssignmentService.serverId) {
+    setInterval(() => {
+      serverAssignmentService.updateServerHealth().catch(error => {
+        logger.error('❌ Failed to update server health', {
+          error: error.message
+        });
+      });
+    }, 60000);
+    logger.info('💓 Server health monitoring started (every 60 seconds)');
+  }
 }
 
 // Health check endpoint (for Railway)
@@ -238,6 +276,12 @@ startService().catch((error) => {
 process.on('SIGINT', async () => {
   console.log('🛑 Shutting down gracefully...');
 
+  // 🆕 MULTI-SERVER: Mark server as inactive
+  if (serverAssignmentService.serverId) {
+    console.log('🛑 Marking server as inactive...');
+    await serverAssignmentService.shutdown();
+  }
+
   // Close BullMQ worker and queue events
   if (broadcastWorker) {
     console.log('🛑 Closing BullMQ worker...');
@@ -261,6 +305,11 @@ process.on('SIGINT', async () => {
 
 process.on('SIGTERM', async () => {
   console.log('🛑 Received SIGTERM, shutting down gracefully...');
+
+  // 🆕 MULTI-SERVER: Mark server as inactive
+  if (serverAssignmentService.serverId) {
+    await serverAssignmentService.shutdown();
+  }
 
   if (broadcastWorker) {
     await broadcastWorker.close();
