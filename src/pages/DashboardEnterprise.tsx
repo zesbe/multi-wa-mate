@@ -133,9 +133,11 @@ export const DashboardEnterprise = () => {
         totalContacts: contactsCount || 0,
         messagesSent: messagesCount || 0,
       });
-    } catch (error: any) {
-      toast.error("Failed to load dashboard data");
-      console.error(error);
+    } catch (error) {
+      toast.error("Gagal memuat data dashboard");
+      if (import.meta.env.DEV) {
+        console.error("Dashboard fetch error:", error);
+      }
     } finally {
       setLoading(false);
     }

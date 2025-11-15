@@ -74,10 +74,8 @@ export default function Pricing() {
 
       if (error) throw error;
 
-      console.log('Transaction created:', data);
-      
       // Navigate to payment page with transaction details
-      navigate('/payment', { 
+      navigate('/payment', {
         state: { 
           payment: data.payment,
           pakasir: data.pakasir
@@ -85,7 +83,9 @@ export default function Pricing() {
       });
       
     } catch (error) {
-      console.error("Error creating transaction:", error);
+      if (import.meta.env.DEV) {
+        console.error("Error creating transaction:", error);
+      }
       toast.error("Gagal membuat transaksi");
     } finally {
       setProcessingPlanId(null);

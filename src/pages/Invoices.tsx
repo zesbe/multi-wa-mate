@@ -81,8 +81,10 @@ export default function Invoices() {
 
       if (error) throw error;
       setInvoices(data || []);
-    } catch (error: any) {
-      console.error("Error fetching invoices:", error);
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error("Error fetching invoices:", error);
+      }
       toast.error("Gagal memuat invoice");
     } finally {
       setLoading(false);

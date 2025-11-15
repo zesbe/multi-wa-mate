@@ -71,7 +71,9 @@ export const AdminPlans = () => {
       
       setPlans(plansData);
     } catch (error) {
-      console.error("Error fetching plans:", error);
+      if (import.meta.env.DEV) {
+        console.error("Error fetching plans:", error);
+      }
       toast.error("Gagal memuat data plan");
     } finally {
       setLoading(false);
@@ -114,7 +116,9 @@ export const AdminPlans = () => {
       resetForm();
       fetchPlans();
     } catch (error) {
-      console.error("Error saving plan:", error);
+      if (import.meta.env.DEV) {
+        console.error("Error saving plan:", error);
+      }
       toast.error("Gagal menyimpan plan");
     }
   };

@@ -92,7 +92,9 @@ export const AdminUsers = () => {
       if (error) throw error;
       setPlans(data || []);
     } catch (error) {
-      console.error("Error fetching plans:", error);
+      if (import.meta.env.DEV) {
+        console.error("Error fetching plans:", error);
+      }
     }
   };
 

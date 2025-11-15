@@ -96,7 +96,9 @@ export default function AdminFinancial() {
       });
 
     } catch (error) {
-      console.error("Error fetching financial data:", error);
+      if (import.meta.env.DEV) {
+        console.error("Error fetching financial data:", error);
+      }
       toast.error("Gagal memuat data keuangan");
     } finally {
       setLoading(false);

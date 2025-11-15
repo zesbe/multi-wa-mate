@@ -25,13 +25,15 @@ export default function Payment() {
   }, [payment, pakasir, navigate]);
 
   useEffect(() => {
+    if (!payment) return;
+    
     // Check payment status every 5 seconds
     const interval = setInterval(() => {
       checkPaymentStatus();
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [payment]);
+  }, [payment?.id]);
 
   const checkPaymentStatus = async () => {
     if (!payment) return;
@@ -41,19 +43,22 @@ export default function Payment() {
         .from("payments")
         .select("status")
         .eq("id", payment.id)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 
-      if (data.status === "completed") {
+      if (data?.status === "completed") {
         setPaymentStatus("completed");
         toast.success("Pembayaran berhasil! Subscription Anda telah aktif");
         setTimeout(() => {
-          navigate("/dashboard");
+          navigate("/dashboard", { replace: true });
         }, 2000);
       }
     } catch (error) {
-      console.error("Error checking payment status:", error);
+      // Silently fail - don't spam errors during polling
+      if (import.meta.env.DEV) {
+        console.error("Error checking payment status:", error);
+      }
     }
   };
 

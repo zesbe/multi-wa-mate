@@ -88,7 +88,9 @@ export default function AdminReminders() {
       if (error) throw error;
       setDevices(data || []);
     } catch (error: any) {
-      console.error("Failed to load devices:", error.message);
+      if (import.meta.env.DEV) {
+        console.error("Failed to load devices:", error.message);
+      }
     }
   };
 
@@ -109,7 +111,9 @@ export default function AdminReminders() {
         sent_today: logsToday?.length || 0
       });
     } catch (error) {
-      console.error("Failed to fetch stats:", error);
+      if (import.meta.env.DEV) {
+        console.error("Failed to fetch stats:", error);
+      }
     }
   };
 

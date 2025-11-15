@@ -29,7 +29,9 @@ export const AdminLandingContent = () => {
       if (featuresRes.data) setFeatures(featuresRes.data as any);
       if (contactRes.data) setContact(contactRes.data as any);
     } catch (error) {
-      console.error("Error fetching data:", error);
+      if (import.meta.env.DEV) {
+        console.error("Error fetching data:", error);
+      }
       toast.error("Gagal memuat data");
     } finally {
       setLoading(false);
@@ -46,7 +48,9 @@ export const AdminLandingContent = () => {
       toast.success("Section berhasil disimpan");
       fetchData();
     } catch (error) {
-      console.error("Error saving section:", error);
+      if (import.meta.env.DEV) {
+        console.error("Error saving section:", error);
+      }
       toast.error("Gagal menyimpan section");
     }
   };
@@ -64,7 +68,9 @@ export const AdminLandingContent = () => {
       toast.success("Feature ditambahkan");
       fetchData();
     } catch (error) {
-      console.error("Error adding feature:", error);
+      if (import.meta.env.DEV) {
+        console.error("Error adding feature:", error);
+      }
       toast.error("Gagal menambah feature");
     }
   };
@@ -79,7 +85,9 @@ export const AdminLandingContent = () => {
       toast.success("Feature berhasil disimpan");
       fetchData();
     } catch (error) {
-      console.error("Error saving feature:", error);
+      if (import.meta.env.DEV) {
+        console.error("Error saving feature:", error);
+      }
       toast.error("Gagal menyimpan feature");
     }
   };
@@ -97,7 +105,9 @@ export const AdminLandingContent = () => {
       toast.success("Feature dihapus");
       fetchData();
     } catch (error) {
-      console.error("Error deleting feature:", error);
+      if (import.meta.env.DEV) {
+        console.error("Error deleting feature:", error);
+      }
       toast.error("Gagal menghapus feature");
     }
   };
@@ -113,7 +123,9 @@ export const AdminLandingContent = () => {
       if (error) throw error;
       toast.success("Kontak berhasil disimpan");
     } catch (error) {
-      console.error("Error saving contact:", error);
+      if (import.meta.env.DEV) {
+        console.error("Error saving contact:", error);
+      }
       toast.error("Gagal menyimpan kontak");
     }
   };
