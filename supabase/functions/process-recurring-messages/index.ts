@@ -59,8 +59,9 @@ serve(async (req) => {
     }
 
     const results = [];
-    const internalApiKey = Deno.env.get('INTERNAL_API_KEY');
 
+    // Process each recurring message by creating broadcast jobs
+    // This leverages BullMQ queue for reliability, retry, and monitoring
     for (const recurring of recurringMessages) {
       console.log(`[Recurring] Processing: ${recurring.name} (${recurring.id})`);
 
@@ -84,98 +85,99 @@ serve(async (req) => {
         continue;
       }
 
-      const device = Array.isArray(recurring.devices) ? recurring.devices[0] : recurring.devices;
-      const server = Array.isArray(device?.backend_servers) 
-        ? device.backend_servers[0] 
-        : device?.backend_servers;
+      try {
+        // Create broadcast job for this recurring message
+        // BullMQ worker will handle actual sending with retry and monitoring
+        const { data: broadcast, error: broadcastError } = await supabase
+          .from('broadcasts')
+          .insert({
+            user_id: recurring.user_id,
+            device_id: recurring.device_id,
+            name: `${recurring.name} - ${new Date().toLocaleString('id-ID')}`,
+            message: recurring.message,
+            media_url: recurring.media_url,
+            target_contacts: recurring.target_contacts,
+            status: 'pending',
+            delay_seconds: recurring.delay_seconds || 5,
+            randomize_delay: recurring.randomize_delay !== false,
+            batch_size: recurring.batch_size || 50,
+            delay_type: 'auto'
+          })
+          .select()
+          .single();
 
-      if (!server?.is_active || !server?.is_healthy) {
-        console.log(`[Recurring] Server not available for ${recurring.name}`);
-        continue;
-      }
-
-      const targetContacts = Array.isArray(recurring.target_contacts) 
-        ? recurring.target_contacts 
-        : [];
-
-      let sentCount = 0;
-      let failedCount = 0;
-
-      // Send messages to all contacts
-      for (const contact of targetContacts) {
-        try {
-          const phoneNumber = typeof contact === 'string' ? contact : contact.phone_number;
+        if (broadcastError) {
+          console.error(`[Recurring] Failed to create broadcast for ${recurring.name}:`, broadcastError);
           
-          // Add delay with randomization if enabled
-          const baseDelay = recurring.delay_seconds * 1000;
-          const delay = recurring.randomize_delay 
-            ? baseDelay + Math.random() * baseDelay * 0.5 
-            : baseDelay;
-          
-          if (sentCount > 0) {
-            await new Promise(resolve => setTimeout(resolve, delay));
-          }
+          // Log failure
+          await supabase
+            .from('recurring_message_logs')
+            .insert({
+              recurring_message_id: recurring.id,
+              user_id: recurring.user_id,
+              sent_to_count: 0,
+              failed_count: 0,
+              error_message: broadcastError.message,
+              details: {
+                error: 'Failed to create broadcast job',
+                message: broadcastError.message
+              }
+            });
 
-          const response = await fetch(`${server.server_url}/send-message`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${internalApiKey}`
-            },
-            body: JSON.stringify({
-              deviceId: device.id,
-              targetJid: phoneNumber,
-              messageType: recurring.media_url ? 'image' : 'text',
-              message: recurring.message,
-              mediaUrl: recurring.media_url
-            })
+          continue;
+        }
+
+        // Update recurring message stats (will be updated again by broadcast worker)
+        await supabase
+          .from('recurring_messages')
+          .update({
+            last_sent_at: new Date().toISOString()
+          })
+          .eq('id', recurring.id);
+
+        // Log execution (queued)
+        await supabase
+          .from('recurring_message_logs')
+          .insert({
+            recurring_message_id: recurring.id,
+            user_id: recurring.user_id,
+            sent_to_count: 0,
+            failed_count: 0,
+            details: {
+              broadcast_id: broadcast.id,
+              status: 'queued',
+              total_contacts: Array.isArray(recurring.target_contacts) ? recurring.target_contacts.length : 0,
+              message: 'Broadcast job created and queued in BullMQ'
+            }
           });
 
-          if (response.ok) {
-            sentCount++;
-            console.log(`[Recurring] Sent to ${phoneNumber}`);
-          } else {
-            failedCount++;
-            console.error(`[Recurring] Failed to send to ${phoneNumber}:`, await response.text());
-          }
-        } catch (error) {
-          failedCount++;
-          console.error(`[Recurring] Error sending to contact:`, error);
-        }
-      }
-
-      // Update recurring message stats
-      await supabase
-        .from('recurring_messages')
-        .update({
-          last_sent_at: new Date().toISOString(),
-          total_sent: recurring.total_sent + sentCount,
-          total_failed: recurring.total_failed + failedCount
-        })
-        .eq('id', recurring.id);
-
-      // Log execution
-      await supabase
-        .from('recurring_message_logs')
-        .insert({
-          recurring_message_id: recurring.id,
-          user_id: recurring.user_id,
-          sent_to_count: sentCount,
-          failed_count: failedCount,
-          details: {
-            total_contacts: targetContacts.length,
-            server_url: server.server_url
-          }
+        results.push({
+          id: recurring.id,
+          name: recurring.name,
+          broadcast_id: broadcast.id,
+          status: 'queued',
+          target_count: Array.isArray(recurring.target_contacts) ? recurring.target_contacts.length : 0
         });
 
-      results.push({
-        id: recurring.id,
-        name: recurring.name,
-        sent: sentCount,
-        failed: failedCount
-      });
-
-      console.log(`[Recurring] Completed ${recurring.name}: ${sentCount} sent, ${failedCount} failed`);
+        console.log(`[Recurring] Created broadcast job for ${recurring.name} (broadcast_id: ${broadcast.id})`);
+      } catch (error: any) {
+        console.error(`[Recurring] Error processing ${recurring.name}:`, error);
+        
+        // Log error
+        await supabase
+          .from('recurring_message_logs')
+          .insert({
+            recurring_message_id: recurring.id,
+            user_id: recurring.user_id,
+            sent_to_count: 0,
+            failed_count: 0,
+            error_message: error.message,
+            details: {
+              error: 'Processing error',
+              message: error.message
+            }
+          });
+      }
     }
 
     return new Response(

@@ -25,8 +25,10 @@ import {
   XCircle,
   Timer,
   TrendingUp,
-  CalendarClock
+  CalendarClock,
+  HelpCircle
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useRecurringMessages } from "@/hooks/useRecurringMessages";
 import { useDevices } from "@/hooks/useDevices";
 import { useContacts } from "@/hooks/useContacts";
@@ -315,13 +317,38 @@ export default function RecurringMessages() {
                   </div>
 
                   <div>
-                    <Label>Media URL (Opsional)</Label>
+                    <Label className="flex items-center gap-2">
+                      Media URL (Opsional)
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <HelpCircle className="w-4 h-4 text-muted-foreground cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs">
+                            <p className="font-semibold mb-1">Cara menggunakan Media URL:</p>
+                            <ol className="text-xs space-y-1 list-decimal list-inside">
+                              <li>Upload gambar ke hosting (Google Drive, Imgur, dll)</li>
+                              <li>Pastikan link dapat diakses publik (bukan private)</li>
+                              <li>Copy direct link gambar (harus berakhiran .jpg, .png, atau .gif)</li>
+                              <li>Paste link ke field ini</li>
+                            </ol>
+                            <p className="text-xs text-muted-foreground mt-2">
+                              <strong>Format:</strong> jpg, png, gif, mp4<br />
+                              <strong>Max size:</strong> 50MB
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </Label>
                     <Input
                       value={formData.media_url}
                       onChange={(e) => setFormData({ ...formData, media_url: e.target.value })}
-                      placeholder="https://..."
+                      placeholder="https://example.com/image.jpg atau https://i.imgur.com/xxx.png"
                       type="url"
                     />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      💡 Tip: Gambar akan dikirim bersamaan dengan pesan teks
+                    </p>
                   </div>
                 </div>
 

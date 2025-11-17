@@ -1,4 +1,86 @@
-# Recurring Messages - Setup Guide
+# 🔄 Recurring Messages - Setup & Architecture Guide
+
+## 📋 Overview
+
+Recurring Messages adalah fitur **profesional** untuk mengirim pesan WhatsApp secara otomatis dan berulang sesuai jadwal. Fitur ini terintegrasi penuh dengan **BullMQ queue system** untuk reliability, monitoring, dan retry mechanism yang sama dengan fitur Broadcast.
+
+---
+
+## 🏗️ Arsitektur (Professional Grade)
+
+### Flow Diagram:
+```
+┌─────────────────┐
+│   PostgreSQL    │ ← User creates recurring message
+│   (Supabase)    │
+│                 │
+│  recurring_     │
+│  messages       │
+└────────┬────────┘
+         │
+         │ pg_cron checks every 5 minutes
+         ▼
+┌─────────────────┐
+│  Edge Function  │ ← Finds due messages
+│   process-      │
+│   recurring-    │
+│   messages      │
+└────────┬────────┘
+         │
+         │ Creates broadcast jobs (NOT direct send)
+         ▼
+┌─────────────────┐      ┌──────────────┐
+│   broadcasts    │─────▶│   BullMQ     │ ← Jobs added to Redis queue
+│   (pending)     │      │   Queue      │
+└─────────────────┘      │  (Redis)     │
+                         └──────┬───────┘
+                                │
+                                │ Workers process with retry
+                                ▼
+                         ┌──────────────┐
+                         │   Railway    │ ← Actual WhatsApp sending
+                         │   Baileys    │
+                         │   Service    │
+                         └──────┬───────┘
+                                │
+                                ▼
+                         ┌──────────────┐
+                         │  Recipients  │ ← Messages delivered
+                         │  (WhatsApp)  │
+                         └──────────────┘
+```
+
+### 🎯 Why BullMQ Queue? (Professional Approach)
+
+❌ **OLD WAY** (Direct Send):
+- Edge function langsung kirim message
+- No retry jika gagal
+- No monitoring
+- Server crash = data loss
+- Inconsistent dengan broadcast
+
+✅ **NEW WAY** (BullMQ Queue):
+- **Automatic Retry**: 3 attempts dengan exponential backoff
+- **Monitoring Dashboard**: Track via BullBoard (`/bullboard`)
+- **Job Persistence**: Survive server restarts (Redis)
+- **Rate Limiting**: Proper throttling & delays
+- **Progress Tracking**: Real-time status updates
+- **Consistent Architecture**: Same system as broadcasts
+- **Professional Grade**: Industry standard untuk queue systems
+
+### 📊 Comparison
+
+| Feature | Direct Send | BullMQ Queue |
+|---------|-------------|--------------|
+| Retry on Failure | ❌ No | ✅ 3 attempts |
+| Monitoring | ❌ No | ✅ BullBoard |
+| Persistence | ❌ Lost on crash | ✅ Saved in Redis |
+| Rate Limiting | ⚠️ Basic | ✅ Advanced |
+| Progress Tracking | ❌ No | ✅ Real-time |
+| Scalability | ⚠️ Limited | ✅ High |
+| Architecture | ⚠️ Inconsistent | ✅ Consistent |
+
+---
 
 ## ✨ Fitur Recurring Messages
 
@@ -81,9 +163,31 @@ SELECT cron.unschedule('process-recurring-messages-every-5min');
 - **Berakhir Pada**: (Opsional) Tanggal selesai
 - **Max Eksekusi**: (Opsional) Berhenti setelah X kali kirim
 
-### 3. Atur Keamanan
-- **Delay**: Jeda antar pesan (detik)
+### 3. Atur Keamanan & Media
+- **Delay**: Jeda antar pesan (5-30 detik recommended)
 - **Randomize Delay**: Tambah variasi delay untuk keamanan
+- **Media URL**: (Opsional) Link gambar/video yang akan dikirim
+  
+  **💡 Cara Menggunakan Media URL:**
+  1. Upload gambar ke hosting (Google Drive, Imgur, atau hosting lain)
+  2. Pastikan link dapat diakses publik (bukan private/restricted)
+  3. Copy **direct link** gambar (harus berakhiran .jpg, .png, .gif, .mp4)
+  4. Paste link ke field "Media URL"
+  
+  **Contoh Valid URLs:**
+  - ✅ `https://i.imgur.com/abc123.jpg`
+  - ✅ `https://example.com/images/promo.png`
+  - ✅ `https://drive.google.com/uc?export=download&id=xxx` (Google Drive direct link)
+  
+  **Format Supported:**
+  - Images: JPG, PNG, GIF
+  - Videos: MP4
+  - Max Size: 50MB
+  
+  **Tips:**
+  - Gambar akan dikirim bersamaan dengan teks
+  - Pastikan link tidak expired
+  - Test link di browser dulu (harus langsung tampil gambar)
 
 ### 4. Pilih Penerima
 - **Dari Kontak**: Pilih dari daftar kontak
