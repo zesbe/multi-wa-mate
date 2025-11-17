@@ -21,7 +21,8 @@ import {
   Settings,
   LogOut,
   Menu,
-  X
+  X,
+  Repeat
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useRef, useEffect, useLayoutEffect } from "react";
@@ -40,6 +41,7 @@ const menuItems = [
 const messagingItems = [
   { icon: Send, label: "Broadcast", path: "/broadcast" },
   { icon: Calendar, label: "Jadwal", path: "/scheduled" },
+  { icon: Repeat, label: "Recurring", path: "/recurring", badge: "New" },
 ];
 
 const featuresItems = [

@@ -1481,6 +1481,145 @@ export type Database = {
         }
         Relationships: []
       }
+      recurring_message_logs: {
+        Row: {
+          created_at: string | null
+          details: Json | null
+          error_message: string | null
+          execution_time: string | null
+          failed_count: number
+          id: string
+          recurring_message_id: string
+          sent_to_count: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          details?: Json | null
+          error_message?: string | null
+          execution_time?: string | null
+          failed_count?: number
+          id?: string
+          recurring_message_id: string
+          sent_to_count?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          details?: Json | null
+          error_message?: string | null
+          execution_time?: string | null
+          failed_count?: number
+          id?: string
+          recurring_message_id?: string
+          sent_to_count?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recurring_message_logs_recurring_message_id_fkey"
+            columns: ["recurring_message_id"]
+            isOneToOne: false
+            referencedRelation: "recurring_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recurring_messages: {
+        Row: {
+          batch_size: number | null
+          created_at: string | null
+          day_of_month: number | null
+          days_of_week: number[] | null
+          delay_seconds: number | null
+          device_id: string
+          end_date: string | null
+          frequency: string
+          id: string
+          interval_value: number | null
+          is_active: boolean | null
+          last_sent_at: string | null
+          max_executions: number | null
+          media_url: string | null
+          message: string
+          name: string
+          next_send_at: string | null
+          randomize_delay: boolean | null
+          start_date: string
+          target_contacts: Json
+          time_of_day: string
+          timezone: string | null
+          total_failed: number | null
+          total_sent: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          batch_size?: number | null
+          created_at?: string | null
+          day_of_month?: number | null
+          days_of_week?: number[] | null
+          delay_seconds?: number | null
+          device_id: string
+          end_date?: string | null
+          frequency: string
+          id?: string
+          interval_value?: number | null
+          is_active?: boolean | null
+          last_sent_at?: string | null
+          max_executions?: number | null
+          media_url?: string | null
+          message: string
+          name: string
+          next_send_at?: string | null
+          randomize_delay?: boolean | null
+          start_date: string
+          target_contacts?: Json
+          time_of_day: string
+          timezone?: string | null
+          total_failed?: number | null
+          total_sent?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          batch_size?: number | null
+          created_at?: string | null
+          day_of_month?: number | null
+          days_of_week?: number[] | null
+          delay_seconds?: number | null
+          device_id?: string
+          end_date?: string | null
+          frequency?: string
+          id?: string
+          interval_value?: number | null
+          is_active?: boolean | null
+          last_sent_at?: string | null
+          max_executions?: number | null
+          media_url?: string | null
+          message?: string
+          name?: string
+          next_send_at?: string | null
+          randomize_delay?: boolean | null
+          start_date?: string
+          target_contacts?: Json
+          time_of_day?: string
+          timezone?: string | null
+          total_failed?: number | null
+          total_sent?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recurring_messages_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reminder_configs: {
         Row: {
           auto_send: boolean | null
@@ -2159,6 +2298,20 @@ export type Database = {
       calculate_device_uptime: {
         Args: { p_device_id: string }
         Returns: number
+      }
+      calculate_next_recurring_send: {
+        Args: {
+          p_day_of_month: number
+          p_days_of_week: number[]
+          p_end_date: string
+          p_frequency: string
+          p_interval_value: number
+          p_last_sent_at: string
+          p_start_date: string
+          p_time_of_day: string
+          p_timezone: string
+        }
+        Returns: string
       }
       calculate_next_send_time_v2: {
         Args: {
