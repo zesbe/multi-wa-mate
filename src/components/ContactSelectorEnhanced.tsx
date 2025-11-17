@@ -191,14 +191,17 @@ export const ContactSelectorEnhanced = ({
                 filteredContacts.map((contact) => (
                   <div
                     key={contact.id}
-                    className="flex items-start gap-3 p-3 hover:bg-accent rounded-lg cursor-pointer transition-colors"
-                    onClick={() => onToggleContact(contact.phone_number)}
+                    className="flex items-start gap-3 p-3 hover:bg-accent rounded-lg transition-colors"
                   >
                     <Checkbox
                       checked={selectedContacts.includes(contact.phone_number)}
-                      className="mt-0.5"
+                      onCheckedChange={() => onToggleContact(contact.phone_number)}
+                      className="mt-0.5 cursor-pointer"
                     />
-                    <div className="flex items-start gap-2 flex-1 min-w-0">
+                    <div 
+                      className="flex items-start gap-2 flex-1 min-w-0 cursor-pointer" 
+                      onClick={() => onToggleContact(contact.phone_number)}
+                    >
                       {contact.is_group ? (
                         <Users className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                       ) : (
