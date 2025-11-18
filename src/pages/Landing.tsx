@@ -147,7 +147,7 @@ const Landing = () => {
       const { data: features } = await supabase
         .from('landing_features')
         .select('*')
-        .order('order_index');
+        .order('display_order');
 
       if (features && features.length > 0) {
         setFeaturesData(features);
