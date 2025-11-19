@@ -339,8 +339,8 @@ export const AdminServerManagement = () => {
     <AdminLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex-1">
             <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
               <Server className="w-8 h-8 text-primary" />
               Multi-Server Management
@@ -349,19 +349,19 @@ export const AdminServerManagement = () => {
               Kelola multiple backend servers dengan load balancing otomatis
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button onClick={loadServers} disabled={refreshing} variant="outline">
-              <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-              Refresh
+          <div className="flex gap-2 w-full sm:w-auto">
+            <Button onClick={loadServers} disabled={refreshing} variant="outline" className="flex-1 sm:flex-none">
+              <RefreshCw className={`w-4 h-4 sm:mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
             </Button>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
-                <Button onClick={resetForm}>
+                <Button onClick={resetForm} className="w-full sm:w-auto">
                   <Plus className="w-4 h-4 mr-2" />
                   Tambah Server
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-md">
+              <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
                 <form onSubmit={handleSubmit}>
                   <DialogHeader>
                     <DialogTitle>

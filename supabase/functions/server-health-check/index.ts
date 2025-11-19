@@ -125,7 +125,12 @@ serve(async (req) => {
     let errorMessage = null;
 
     try {
-      const healthCheckUrl = `${server.server_url}/health`;
+      // Normalize URL: remove trailing slashes to prevent double slashes
+      const normalizedUrl = server.server_url.replace(/\/+$/, '');
+      const healthCheckUrl = `${normalizedUrl}/health`;
+      
+      console.log(`Health check: ${healthCheckUrl}`);
+      
       const response = await fetch(healthCheckUrl, {
         method: 'GET',
         headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {},
@@ -139,6 +144,7 @@ serve(async (req) => {
     } catch (error: any) {
       isHealthy = false;
       errorMessage = error.message || 'Health check request failed';
+      console.error('Health check error:', errorMessage);
     }
 
     const responseTime = Date.now() - startTime;
