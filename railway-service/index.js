@@ -97,7 +97,7 @@ async function startService() {
     if (broadcastWorker) {
       console.log('✅ BullMQ worker started - broadcasts will be processed via queue');
     } else {
-      console.warn('⚠️  BullMQ worker not started - check UPSTASH_REDIS_URL configuration');
+      console.warn('⚠️  BullMQ worker not started - check REDIS_URL configuration');
       console.warn('⚠️  Falling back to polling mode for broadcast processing');
     }
   } catch (error) {

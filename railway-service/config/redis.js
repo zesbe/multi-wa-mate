@@ -17,7 +17,7 @@ if (!REDIS_URL) {
 
 /**
  * Create ioredis connection for BullMQ
- * Configured for Upstash with TLS support
+ * Configured for local Redis (Railway/VPS/Dokploy)
  */
 function createIORedisConnection() {
   if (!REDIS_URL) {
