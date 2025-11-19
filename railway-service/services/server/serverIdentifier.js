@@ -111,12 +111,12 @@ class ServerIdentifier {
   /**
    * Initialize server identification with multiple fallback methods
    * Priority order:
-   * 1. SERVER_ID env var (explicit configuration)
-   * 2. RAILWAY_STATIC_URL (Railway deployment)
-   * 3. Hostname (generic deployment)
-   * 4. Generated ID (last resort)
+   * 1. SERVER_ID env var (explicit configuration) - MUST be valid UUID
+   * 2. RAILWAY_STATIC_URL (Railway deployment) - converted to UUID v5
+   * 3. Hostname (generic deployment) - converted to UUID v5
+   * 4. Generated UUID (last resort)
    *
-   * @returns {string} Validated and sanitized server ID
+   * @returns {string} Valid UUID v4 or v5 server ID
    */
   initialize() {
     if (this._isInitialized) {
@@ -128,56 +128,64 @@ class ServerIdentifier {
     let source = null;
 
     try {
-      // Priority 1: Explicit SERVER_ID environment variable
+      // Priority 1: Explicit SERVER_ID environment variable (must be UUID)
       if (process.env.SERVER_ID) {
         rawServerId = process.env.SERVER_ID;
         source = 'SERVER_ID env var';
         this._serverType = 'explicit';
+
+        // Validate that it's a proper UUID
+        if (!this.isValidUUID(rawServerId)) {
+          throw new Error('SERVER_ID must be a valid UUID format');
+        }
+
+        this._serverId = rawServerId;
       }
-      // Priority 2: Railway deployment identifier
+      // Priority 2: Railway deployment identifier → convert to UUID v5
       else if (process.env.RAILWAY_STATIC_URL) {
         rawServerId = process.env.RAILWAY_STATIC_URL;
         source = 'RAILWAY_STATIC_URL';
         this._serverType = 'railway';
+
+        // Generate deterministic UUID v5 from Railway URL
+        this._serverId = this.generateUUIDv5(rawServerId);
       }
-      // Priority 3: RAILWAY_SERVICE_NAME (Railway service identifier)
+      // Priority 3: RAILWAY_SERVICE_NAME → convert to UUID v5
       else if (process.env.RAILWAY_SERVICE_NAME) {
         rawServerId = process.env.RAILWAY_SERVICE_NAME;
         source = 'RAILWAY_SERVICE_NAME';
         this._serverType = 'railway';
+
+        // Generate deterministic UUID v5 from service name
+        this._serverId = this.generateUUIDv5(rawServerId);
       }
-      // Priority 4: Hostname
+      // Priority 4: Hostname → convert to UUID v5
       else if (process.env.HOSTNAME) {
         rawServerId = process.env.HOSTNAME;
         source = 'HOSTNAME env var';
         this._serverType = 'generic';
+
+        // Generate deterministic UUID v5 from hostname
+        this._serverId = this.generateUUIDv5(rawServerId);
       }
-      // Priority 5: OS hostname (Node.js API)
+      // Priority 5: OS hostname → convert to UUID v5
       else {
         const os = require('os');
         rawServerId = os.hostname();
         source = 'OS hostname';
         this._serverType = 'generic';
+
+        // Generate deterministic UUID v5 from hostname
+        this._serverId = this.generateUUIDv5(rawServerId);
       }
 
-      // 🔒 SECURITY: Sanitize raw server ID
-      const sanitizedServerId = this.sanitizeServerId(rawServerId);
-
-      if (!sanitizedServerId) {
-        throw new Error('Failed to sanitize server ID - result is empty');
-      }
-
-      // 🔒 SECURITY: Validate sanitized server ID
-      this.validateServerId(sanitizedServerId);
-
-      // Store validated server ID (immutable)
-      this._serverId = sanitizedServerId;
       this._isInitialized = true;
 
       logger.info('✅ Server identified successfully', {
         serverId: this._serverId,
         source: source,
-        type: this._serverType
+        type: this._serverType,
+        originalValue: rawServerId !== this._serverId ? rawServerId : undefined
       });
 
       return this._serverId;
@@ -189,7 +197,7 @@ class ServerIdentifier {
         source: source
       });
 
-      // 🔒 FALLBACK: Generate secure random ID as last resort
+      // 🔒 FALLBACK: Generate secure random UUID v4 as last resort
       const fallbackId = this.generateFallbackServerId();
 
       logger.warn('⚠️ Using generated fallback server ID', {
@@ -205,19 +213,92 @@ class ServerIdentifier {
   }
 
   /**
-   * Generate secure fallback server ID
+   * Validate UUID format (v4 or v5)
+   * @param {string} uuid - UUID string to validate
+   * @returns {boolean} True if valid UUID
+   */
+  isValidUUID(uuid) {
+    if (!uuid || typeof uuid !== 'string') return false;
+
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidPattern.test(uuid);
+  }
+
+  /**
+   * Generate deterministic UUID v5 from a name/hostname
+   * Uses DNS namespace for consistency
+   * Same input always produces same UUID
+   *
+   * @param {string} name - Name/hostname to convert to UUID
+   * @returns {string} UUID v5 string
+   */
+  generateUUIDv5(name) {
+    if (!name) {
+      throw new Error('Name is required for UUID v5 generation');
+    }
+
+    // DNS namespace UUID (standard)
+    const DNS_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+
+    // Convert namespace UUID to buffer
+    const namespaceBuffer = Buffer.from(DNS_NAMESPACE.replace(/-/g, ''), 'hex');
+
+    // Convert name to buffer
+    const nameBuffer = Buffer.from(name, 'utf8');
+
+    // Concatenate namespace and name
+    const combined = Buffer.concat([namespaceBuffer, nameBuffer]);
+
+    // Create SHA-1 hash
+    const hash = crypto.createHash('sha1').update(combined).digest();
+
+    // Set version (5) and variant bits
+    hash[6] = (hash[6] & 0x0f) | 0x50; // Version 5
+    hash[8] = (hash[8] & 0x3f) | 0x80; // Variant 10xx
+
+    // Format as UUID string
+    const uuid = [
+      hash.slice(0, 4).toString('hex'),
+      hash.slice(4, 6).toString('hex'),
+      hash.slice(6, 8).toString('hex'),
+      hash.slice(8, 10).toString('hex'),
+      hash.slice(10, 16).toString('hex')
+    ].join('-');
+
+    logger.debug('Generated UUID v5', {
+      input: name,
+      output: uuid
+    });
+
+    return uuid;
+  }
+
+  /**
+   * Generate secure fallback server ID as UUID v4
    * Used when all other identification methods fail
    *
-   * @returns {string} Generated server ID
+   * @returns {string} Generated UUID v4
    */
   generateFallbackServerId() {
-    const timestamp = Date.now();
-    const randomBytes = crypto.randomBytes(8).toString('hex');
-    const fallbackId = `server-${timestamp}-${randomBytes}`;
+    // Generate random UUID v4
+    const randomBytes = crypto.randomBytes(16);
 
-    logger.warn('🔧 Generated fallback server ID', { fallbackId });
+    // Set version (4) and variant bits
+    randomBytes[6] = (randomBytes[6] & 0x0f) | 0x40; // Version 4
+    randomBytes[8] = (randomBytes[8] & 0x3f) | 0x80; // Variant 10xx
 
-    return fallbackId;
+    // Format as UUID string
+    const uuid = [
+      randomBytes.slice(0, 4).toString('hex'),
+      randomBytes.slice(4, 6).toString('hex'),
+      randomBytes.slice(6, 8).toString('hex'),
+      randomBytes.slice(8, 10).toString('hex'),
+      randomBytes.slice(10, 16).toString('hex')
+    ].join('-');
+
+    logger.warn('🔧 Generated fallback server ID (UUID v4)', { fallbackId: uuid });
+
+    return uuid;
   }
 
   /**
