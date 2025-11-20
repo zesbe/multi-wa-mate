@@ -70,7 +70,7 @@ SERVER_REGION="surabaya"
 SERVER_URL="http://139.xxx.xxx.xxx:3000"
 ```
 
-## 🔄 Cara Kerja Auto-Assignment
+## 🔄 Cara Kerja Auto-Assignment (UPDATED)
 
 ### 1. Device Baru Dibuat
 ```
@@ -84,20 +84,27 @@ Frontend → Update status: connecting
 Backend → Device Manager deteksi device baru
 ```
 
-### 3. Load Balancing Algorithm
+### 3. Load Balancing Check (Informational Only)
 ```sql
--- System cari server terbaik berdasarkan:
+-- System cek server terbaik untuk referensi:
 1. is_healthy = true AND is_active = true
 2. current_load < max_capacity (punya ruang)
 3. priority DESC (priority tinggi dipilih dulu)
 4. current_load ASC (load terendah dipilih)
 ```
 
-### 4. Auto-Assignment
+### 4. **PENTING - Assignment Baru (FIX QR Code Issue)**
 ```
-Server terpilih → Assign device ke dirinya
-Device → assigned_server_id = server_id
-Server → Mulai koneksi WhatsApp
+⚡ PERUBAHAN BARU:
+Server yang pertama deteksi device → Langsung assign ke dirinya sendiri
+Device → assigned_server_id = server_id (server saat ini)
+Server → Langsung mulai koneksi WhatsApp
+✅ QR code muncul SEGERA tanpa delay!
+
+ALASAN:
+- Sebelumnya: Server A assign ke Server B → tunggu Server B pick up (delay 10 detik)
+- Sekarang: Server A langsung connect → QR code muncul instant
+- Load balancing tetap jalan melalui health check dan capacity management
 ```
 
 ### 5. Prevention

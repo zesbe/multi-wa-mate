@@ -362,6 +362,9 @@ async function checkDevices(activeSockets, connectWhatsApp) {
             continue;
           }
 
+          // Update local device object with assignment
+          device.assigned_server_id = assignedServerId;
+
           logger.info('✅ Device auto-assigned', {
             deviceId: device.id,
             assignedTo: assignedServerId,
@@ -376,10 +379,11 @@ async function checkDevices(activeSockets, connectWhatsApp) {
         }
       }
 
-      // 🆕 MULTI-SERVER: Verify this server should handle this device
-      // Use fresh assignedServerId instead of stale device object
+      // 🆕 MULTI-SERVER: Check if this server should handle this device
+      // With new fix, devices will always be assigned to current server initially
+      // so this check should always pass for the server that picked up the device
       if (assignedServerId !== serverAssignmentService.serverId) {
-        logger.info('📤 Device assigned to different server - skipping', {
+        logger.debug('📋 Device belongs to different server - skipping', {
           deviceId: device.id,
           deviceName: device.device_name,
           assignedServer: assignedServerId,
