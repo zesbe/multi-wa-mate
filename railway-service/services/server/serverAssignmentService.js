@@ -400,17 +400,38 @@ class ServerAssignmentService {
 
   /**
    * Check if device should be handled by this server
+   * WITH STRICT VALIDATION
    *
    * @param {Object} device - Device object
    * @returns {boolean} True if this server should handle the device
    */
   shouldHandleDevice(device) {
-    if (!device) return false;
+    if (!device) {
+      logger.debug('shouldHandleDevice: device is null/undefined');
+      return false;
+    }
 
-    // ONLY handle devices assigned to this server
+    // 🔒 STRICT: ONLY handle devices explicitly assigned to this server
     // Unassigned devices must be explicitly assigned first to prevent conflicts
     if (device.assigned_server_id === this.serverId) {
+      logger.debug('✅ Device should be handled by this server', {
+        deviceId: device.id,
+        serverId: this.serverId
+      });
       return true;
+    }
+
+    if (device.assigned_server_id) {
+      logger.debug('📋 Device assigned to different server', {
+        deviceId: device.id,
+        assignedTo: device.assigned_server_id,
+        thisServer: this.serverId
+      });
+    } else {
+      logger.debug('⚠️ Device unassigned - needs assignment first', {
+        deviceId: device.id,
+        thisServer: this.serverId
+      });
     }
 
     return false;
@@ -418,7 +439,7 @@ class ServerAssignmentService {
 
    /**
     * 🆕 Auto-assign unassigned device to best available server
-    * Uses load balancing to distribute devices across servers
+    * Uses ATOMIC update with strict race condition prevention
     *
     * @param {Object} device - Device object
     * @returns {Promise<string|null>} Assigned server ID, or null if assignment failed
@@ -431,12 +452,32 @@ class ServerAssignmentService {
         return null;
       }
 
-      // If already assigned, just return current assignment
-      if (device.assigned_server_id) {
-        return device.assigned_server_id;
+      // 🔒 CRITICAL: Re-check if device is still unassigned
+      const { data: currentDevice, error: checkError } = await supabase
+        .from('devices')
+        .select('id, assigned_server_id')
+        .eq('id', device.id)
+        .single();
+
+      if (checkError) {
+        logger.error('❌ Failed to check device assignment status', {
+          deviceId: device.id,
+          error: checkError.message
+        });
+        return null;
       }
 
-      logger.info('🔄 Auto-assigning unassigned device', {
+      // If already assigned, return current assignment (another server got it)
+      if (currentDevice.assigned_server_id) {
+        logger.info('ℹ️ Device already assigned during check', {
+          deviceId: device.id,
+          assignedTo: currentDevice.assigned_server_id,
+          isThisServer: currentDevice.assigned_server_id === this.serverId
+        });
+        return currentDevice.assigned_server_id;
+      }
+
+      logger.info('🔄 Auto-assigning unassigned device with atomic update', {
         deviceId: device.id,
         deviceName: device.device_name
       });
@@ -446,7 +487,7 @@ class ServerAssignmentService {
       const targetServerId = bestServerId || this.serverId;
       const now = new Date().toISOString();
 
-      // ⚖️ ATOMIC ASSIGNMENT: only assign if still unassigned
+      // ⚖️ ATOMIC ASSIGNMENT: only assign if STILL unassigned (prevent race)
       const { data: assignResult, error: assignError } = await supabase
         .from('devices')
         .update({

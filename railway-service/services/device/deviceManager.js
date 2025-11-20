@@ -88,7 +88,56 @@ async function clearStuckDeviceSession(device) {
 }
 
 /**
- * 🔒 Validate device ownership before connecting
+ * 🔒 Validate device ownership STRICTLY from database before connecting
+ * This prevents race conditions by always checking fresh data
+ * @param {string} deviceId - Device ID
+ * @param {string} expectedServerId - Expected server ID
+ * @returns {Promise<boolean>} True if this server owns the device
+ */
+async function validateDeviceOwnership(deviceId, expectedServerId) {
+  try {
+    // 🔒 CRITICAL: Always fetch FRESH data from database before connecting
+    const { data: device, error } = await supabase
+      .from('devices')
+      .select('id, assigned_server_id, status')
+      .eq('id', deviceId)
+      .single();
+
+    if (error || !device) {
+      logger.error('❌ Device ownership validation failed - device not found', {
+        deviceId,
+        error: error?.message
+      });
+      return false;
+    }
+
+    // 🔒 STRICT CHECK: Device must be assigned to THIS server
+    if (device.assigned_server_id !== expectedServerId) {
+      logger.warn('⚠️ Device ownership validation failed - assigned to different server', {
+        deviceId,
+        expectedServer: expectedServerId,
+        actualServer: device.assigned_server_id
+      });
+      return false;
+    }
+
+    logger.debug('✅ Device ownership validated', {
+      deviceId,
+      serverId: expectedServerId
+    });
+
+    return true;
+  } catch (error) {
+    logger.error('❌ Exception during device ownership validation', {
+      deviceId,
+      error: error.message
+    });
+    return false;
+  }
+}
+
+/**
+ * 🔒 Validate device object before processing
  * @param {Object} device - Device object
  * @returns {boolean} True if valid
  */
@@ -124,7 +173,25 @@ function validateDevice(device) {
  */
 async function handleMissingSocket(device, connectWhatsApp, activeSockets) {
   try {
-    // 🔒 SECURITY: Validate device before connecting
+    logger.info('🔌 Device missing socket - validating before connection', {
+      deviceId: device.id,
+      deviceName: device.device_name,
+      status: device.status
+    });
+
+    // 🔒 CRITICAL: Validate ownership from database BEFORE connecting
+    const isOwner = await validateDeviceOwnership(device.id, serverAssignmentService.serverId);
+    
+    if (!isOwner) {
+      logger.warn('🚫 Final ownership check failed - aborting connection', {
+        deviceId: device.id,
+        deviceName: device.device_name,
+        serverId: serverAssignmentService.serverId
+      });
+      return;
+    }
+
+    // 🔒 SECURITY: Validate device structure before connecting
     if (!validateDevice(device)) {
       return;
     }
@@ -401,6 +468,18 @@ async function checkDevices(activeSockets, connectWhatsApp) {
       }
 
       if (!sock) {
+        // 🔒 CRITICAL: Validate ownership from database BEFORE connecting
+        const isOwner = await validateDeviceOwnership(device.id, serverAssignmentService.serverId);
+        
+        if (!isOwner) {
+          logger.warn('🚫 Ownership validation failed before connection - skipping', {
+            deviceId: device.id,
+            deviceName: device.device_name,
+            serverId: serverAssignmentService.serverId
+          });
+          continue;
+        }
+
         // No socket exists, create new connection
         await handleMissingSocket(device, connectWhatsApp, activeSockets);
       } else if (device.status === 'connected' && !sock.user) {
