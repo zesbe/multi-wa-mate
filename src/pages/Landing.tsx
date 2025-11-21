@@ -681,10 +681,10 @@ const Landing = () => {
             Dipercaya oleh ribuan bisnis di Indonesia
           </p>
           <div className="flex flex-wrap justify-center items-center gap-12 opacity-50">
-            <div className="text-2xl font-bold text-gray-500">TokoBagus</div>
-            <div className="text-2xl font-bold text-gray-500">ShopMart</div>
-            <div className="text-2xl font-bold text-gray-500">BisnisKu</div>
-            <div className="text-2xl font-bold text-gray-500">OnlineStore</div>
+            <div className="text-2xl font-bold text-gray-600">TokoBagus</div>
+            <div className="text-2xl font-bold text-gray-600">ShopMart</div>
+            <div className="text-2xl font-bold text-gray-600">BisnisKu</div>
+            <div className="text-2xl font-bold text-gray-600">OnlineStore</div>
           </div>
         </div>
       </section>
