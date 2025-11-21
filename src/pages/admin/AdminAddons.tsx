@@ -19,6 +19,7 @@ export default function AdminAddons() {
   const { addOns, isLoading, createAddOn, updateAddOn, deleteAddOn } = useAdminAddOns();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAddon, setEditingAddon] = useState<any>(null);
+  const [scrollPosition, setScrollPosition] = useState(0);
   const { register, handleSubmit, reset, setValue, watch } = useForm();
 
   // Fetch user add-ons for analytics
@@ -47,15 +48,16 @@ export default function AdminAddons() {
       } else {
         await createAddOn(payload);
       }
-      setIsDialogOpen(false);
-      setEditingAddon(null);
-      reset();
+      handleCloseSheet();
     } catch (error) {
       console.error('Failed to save add-on:', error);
     }
   };
 
   const handleEdit = (addon: any) => {
+    // Save scroll position before opening sheet
+    setScrollPosition(window.scrollY);
+    
     setEditingAddon(addon);
     setValue('name', addon.name);
     setValue('slug', addon.slug);
@@ -65,6 +67,24 @@ export default function AdminAddons() {
     setValue('is_active', addon.is_active);
     setValue('features', Array.isArray(addon.features) ? addon.features.join('\n') : '');
     setIsDialogOpen(true);
+  };
+  
+  const handleOpenNewAddon = () => {
+    // Save scroll position before opening sheet
+    setScrollPosition(window.scrollY);
+    setEditingAddon(null);
+    reset();
+    setIsDialogOpen(true);
+  };
+  
+  const handleCloseSheet = () => {
+    setIsDialogOpen(false);
+    setEditingAddon(null);
+    reset();
+    // Restore scroll position after sheet closes
+    setTimeout(() => {
+      window.scrollTo({ top: scrollPosition, behavior: 'instant' });
+    }, 0);
   };
 
   const handleDelete = async (id: string) => {
@@ -99,9 +119,9 @@ export default function AdminAddons() {
               Create and manage add-ons for marketplace
             </p>
           </div>
-          <Sheet open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <Sheet open={isDialogOpen} onOpenChange={(open) => !open && handleCloseSheet()}>
             <SheetTrigger asChild>
-              <Button onClick={() => { setEditingAddon(null); reset(); }} className="gap-2">
+              <Button onClick={handleOpenNewAddon} className="gap-2">
                 <Plus className="w-4 h-4" />
                 New Add-on
               </Button>
@@ -168,7 +188,7 @@ export default function AdminAddons() {
                 </div>
 
                 <div className="flex gap-2 pt-4">
-                  <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); setEditingAddon(null); reset(); }} className="flex-1">
+                  <Button type="button" variant="outline" onClick={handleCloseSheet} className="flex-1">
                     Cancel
                   </Button>
                   <Button type="submit" className="flex-1">
