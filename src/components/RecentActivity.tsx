@@ -1,9 +1,22 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Smartphone, Send, MessageSquare, Users, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Activity, Smartphone, Send, MessageSquare, Users, CheckCircle2, XCircle, Clock, Trash2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { id } from "date-fns/locale";
+import { toast } from "sonner";
 
 interface ActivityItem {
   id: string;
@@ -17,6 +30,7 @@ interface ActivityItem {
 export const RecentActivity = () => {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [clearing, setClearing] = useState(false);
 
   useEffect(() => {
     fetchRecentActivities();
@@ -178,15 +192,69 @@ export const RecentActivity = () => {
     }
   };
 
+  const handleClearHistory = async () => {
+    setClearing(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      // Clear device connection logs only (safe to delete)
+      const { error } = await supabase
+        .from('device_connection_logs')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      toast.success('Riwayat aktivitas berhasil dihapus');
+      await fetchRecentActivities();
+    } catch (error) {
+      console.error('Error clearing history:', error);
+      toast.error('Gagal menghapus riwayat aktivitas');
+    } finally {
+      setClearing(false);
+    }
+  };
+
   if (loading) {
-    return (
-      <Card>
-        <CardHeader>
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <Activity className="w-5 h-5" />
             Recent Activity
           </CardTitle>
-        </CardHeader>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                disabled={clearing || activities.length === 0}
+                className="h-8 gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Clear
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Hapus Riwayat Aktivitas?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Tindakan ini akan menghapus semua log aktivitas koneksi device Anda. 
+                  Data broadcasts, templates, dan contacts tidak akan terpengaruh.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Batal</AlertDialogCancel>
+                <AlertDialogAction onClick={handleClearHistory} disabled={clearing}>
+                  {clearing ? 'Menghapus...' : 'Hapus'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </CardHeader>
         <CardContent>
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
