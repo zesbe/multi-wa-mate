@@ -118,29 +118,6 @@ export interface AutoPost {
   updated_at: string;
 }
 
-export interface CRMMessage {
-  id: string;
-  user_id: string;
-  device_id: string;
-  from_number: string;
-  to_number: string;
-  message_type: MessageType;
-  message_content: string;
-  media_url: string | null;
-  is_from_me: boolean;
-  timestamp: string;
-  created_at: string;
-}
-
-export interface CRMConversation {
-  contact_number: string;
-  contact_name: string | null;
-  last_message: string;
-  last_message_time: string;
-  unread_count: number;
-  is_from_me: boolean;
-}
-
 export interface User {
   id: string;
   email: string;

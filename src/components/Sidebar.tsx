@@ -32,7 +32,6 @@ import { useNavigate } from "react-router-dom";
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: PlayCircle, label: "Tutorial", path: "/tutorial" },
-  { icon: MessageSquare, label: "CRM Chat", path: "/crm-chat", badge: "New" },
   { icon: Radio, label: "Devices", path: "/devices" },
   { icon: Users, label: "Kontak", path: "/contacts" },
   { icon: FileText, label: "Template", path: "/templates" },

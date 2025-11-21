@@ -3,7 +3,6 @@ const os = require('os');
 const { supabase } = require('../../config/supabase');
 const { useSupabaseAuthState } = require('./authStateManager');
 const { handleQRCode } = require('../../qr-handler');
-const { setupCRMMessageListeners } = require('../../crm-message-handler');
 const { logger } = require('../../logger');
 const { logConnectionEvent, updateDeviceHealth } = require('../device/deviceSecurityLogger'); // 🔒 Security logging
 const { serverAssignmentService } = require('../server/serverAssignmentService'); // 🆕 Multi-server support
@@ -148,9 +147,6 @@ async function handleConnectionOpen(sock, device, isRecovery) {
 
     // Store user_id in socket for HTTP endpoint access
     sock.deviceUserId = device.user_id;
-
-    // Setup CRM message listeners to save all incoming/outgoing messages
-    setupCRMMessageListeners(sock, device.id, device.user_id);
 
   } catch (connError) {
     console.error('❌ Error handling connection:', connError);
