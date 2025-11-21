@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, Smartphone, QrCode, Trash2, RefreshCw, Copy, LogOut, Info, RotateCcw, Database, Bell, BellOff, AlertCircle } from "lucide-react";
 import { useEffect, useState, useCallback, useRef, useMemo, startTransition } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { toast } from "sonner";
 import {
   requestNotificationPermission,
@@ -49,6 +50,8 @@ export const Devices = () => {
   const [connectionStatus, setConnectionStatus] = useState<string>("idle");
   const [qrExpiry, setQrExpiry] = useState<number>(0);
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  const [qrRealtimeChannel, setQrRealtimeChannel] = useState<RealtimeChannel | null>(null);
+  const [realtimeChannel, setRealtimeChannel] = useState<RealtimeChannel | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [swipedDeviceId, setSwipedDeviceId] = useState<string | null>(null);
   const [connectionMethod, setConnectionMethod] = useState<'qr' | 'pairing'>('qr');
@@ -186,6 +189,9 @@ export const Devices = () => {
       supabase.removeChannel(channel);
       if (pollingInterval) {
         clearInterval(pollingInterval);
+      }
+      if (qrRealtimeChannel) {
+        supabase.removeChannel(qrRealtimeChannel);
       }
     };
   }, [userId, notificationsEnabled, shouldShowNotification, selectedDevice?.id, connectionStatus, pollingInterval]);
@@ -330,7 +336,57 @@ export const Devices = () => {
       setConnectionStatus(method === 'qr' ? "generating_qr" : "generating_pairing");
       toast.info(method === 'qr' ? "Menghubungkan ke WhatsApp..." : "Membuat kode pairing...", { duration: 2000 });
 
-      // Poll updates from DB and fetch ephemeral codes from Edge Function (Redis)
+      // 🚀 OPTIMIZATION: Subscribe to realtime for instant QR updates
+      const qrChannel = supabase
+        .channel(`qr-${device.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'devices',
+            filter: `id=eq.${device.id}`
+          },
+          (payload) => {
+            const updated = payload.new as Device;
+            console.log('📡 QR realtime update:', updated);
+            
+            if (updated.qr_code && method === 'qr') {
+              setSelectedDevice(updated);
+              if (connectionStatus !== "qr_ready") {
+                setConnectionStatus("qr_ready");
+                setQrExpiry(60);
+                toast.success("QR Code siap! Scan sekarang", { duration: 2000 });
+              }
+            }
+            
+            if (updated.pairing_code && method === 'pairing') {
+              setSelectedDevice(updated);
+              if (connectionStatus !== "pairing_ready") {
+                setConnectionStatus("pairing_ready");
+                toast.success(`Kode pairing: ${updated.pairing_code}`, { duration: 2000 });
+              }
+            }
+            
+            if (updated.status === 'connected') {
+              setConnectionStatus("connected");
+              toast.success("WhatsApp berhasil terhubung!", { duration: 3000 });
+              setTimeout(() => {
+                setQrDialogOpen(false);
+                setConnectionStatus("idle");
+              }, 1500);
+              if (qrRealtimeChannel) {
+                supabase.removeChannel(qrRealtimeChannel);
+                setQrRealtimeChannel(null);
+              }
+            }
+          }
+        )
+        .subscribe();
+      
+      setQrRealtimeChannel(qrChannel);
+
+      // Fallback: Poll updates from DB and fetch ephemeral codes from Edge Function (Redis)
       const interval = setInterval(async () => {
         // 1) Read latest device row
         const { data: row, error: rowError } = await supabase
@@ -423,9 +479,12 @@ export const Devices = () => {
             setPollingInterval(null);
           }
         }
-      }, 2000); // Poll every 2 seconds - optimized with batching
+      }, 2000); // Poll every 2 seconds
 
-      setPollingInterval(interval);
+      // Start polling with 3 second delay to give realtime priority
+      setTimeout(() => {
+        setPollingInterval(interval);
+      }, 3000);
 
       // Auto-stop polling after 5 minutes
       setTimeout(async () => {
@@ -448,6 +507,10 @@ export const Devices = () => {
     } catch (error: any) {
       setConnectionStatus("error");
       toast.error(error.message);
+      if (qrRealtimeChannel) {
+        supabase.removeChannel(qrRealtimeChannel);
+        setQrRealtimeChannel(null);
+      }
     }
   };
 
@@ -470,6 +533,10 @@ export const Devices = () => {
       if (pollingInterval) {
         clearInterval(pollingInterval);
         setPollingInterval(null);
+      }
+      if (qrRealtimeChannel) {
+        supabase.removeChannel(qrRealtimeChannel);
+        setQrRealtimeChannel(null);
       }
       await supabase
         .from("devices")

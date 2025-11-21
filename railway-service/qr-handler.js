@@ -16,15 +16,13 @@ async function handleQRCode(device, qr, supabase) {
 
     console.log('📷 QR Code generated for', device.device_name);
     
-    // Convert QR string to data URL
-    const qrDataUrl = await QRCode.toDataURL(qr);
-    
-    // Update database with QR code
+    // 🚀 OPTIMIZATION: Store raw QR string instead of data URL
+    // Frontend will render it directly - saves CPU + network bandwidth
     const { error } = await supabase
       .from('devices')
       .update({ 
         status: 'connecting',
-        qr_code: qrDataUrl,
+        qr_code: qr, // Raw QR string
         pairing_code: null,
         updated_at: new Date().toISOString()
       })
@@ -35,10 +33,10 @@ async function handleQRCode(device, qr, supabase) {
       return false;
     }
 
-    console.log('✅ QR stored in Supabase - scan with WhatsApp app');
+    console.log('✅ Raw QR stored in Supabase - realtime will push to frontend instantly');
     return true;
   } catch (error) {
-    console.error('❌ Error generating QR code:', error);
+    console.error('❌ Error handling QR code:', error);
     return false;
   }
 }
